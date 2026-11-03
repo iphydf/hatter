@@ -189,6 +189,14 @@ defaultStyleEmpty = WidgetStyle
   , wsTranslateY       = Nothing
   , wsWidth            = Nothing
   , wsTouchPassthrough = Nothing
+  , wsHeight           = Nothing
+  , wsWeight           = Nothing
+  , wsAlignSelf        = Nothing
+  , wsMargin           = Nothing
+  , wsMaxWidth         = Nothing
+  , wsMaxLines         = Nothing
+  , wsCornerRadius     = Nothing
+  , wsKeepAtEnd        = Nothing
   }
 
 -- | Linearly interpolate between two 'Double' values.
@@ -220,6 +228,12 @@ interpolateStyle nodeId fromStyle toStyle progress = do
     (wsTranslateY fromStyle) (wsTranslateY toStyle)
   lerpNumProp Bridge.PropWidth
     (wsWidth fromStyle) (wsWidth toStyle)
+  lerpNumProp Bridge.PropHeight
+    (wsHeight fromStyle) (wsHeight toStyle)
+  lerpNumProp Bridge.PropMargin
+    (wsMargin fromStyle) (wsMargin toStyle)
+  lerpNumProp Bridge.PropCornerRadius
+    (wsCornerRadius fromStyle) (wsCornerRadius toStyle)
   -- TouchPassthrough is boolean — snaps to target, no interpolation.
   case wsTouchPassthrough toStyle of
     Just enabled ->

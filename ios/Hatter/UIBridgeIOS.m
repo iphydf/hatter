@@ -14,6 +14,7 @@
 #import <os/log.h>
 #import <objc/runtime.h>
 #include <sys/utsname.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include "UIBridge.h"
@@ -570,6 +571,7 @@ static void ios_set_num_prop(int32_t nodeId, int32_t propId, double value)
             default: kbType = UIKeyboardTypeDefault;    break;
             }
             ((UITextField *)view).keyboardType = kbType;
+            ((UITextField *)view).secureTextEntry = (inputType == 3);
         }
         LOGI("setNumProp(node=%d, inputType=%d)", nodeId, inputType);
         break;
@@ -584,7 +586,7 @@ static void ios_set_num_prop(int32_t nodeId, int32_t propId, double value)
         /* Fixed width in points; a constraint overrides the
          * intrinsic content width inside the UIStackView layout.
          * Deactivate any width constraint from an earlier render
-         * before pinning the new one. */
+         * before pinning the new one. NaN takes the width off. */
         CGFloat pt = (CGFloat)value;
         NSArray<NSLayoutConstraint *> *existing = [view.constraints copy];
         for (NSLayoutConstraint *constraint in existing) {
@@ -594,7 +596,9 @@ static void ios_set_num_prop(int32_t nodeId, int32_t propId, double value)
                 constraint.active = NO;
             }
         }
-        [view.widthAnchor constraintEqualToConstant:pt].active = YES;
+        if (!isnan(value)) {
+            [view.widthAnchor constraintEqualToConstant:pt].active = YES;
+        }
         LOGI("setNumProp(node=%d, width=%.1f)", nodeId, value);
         break;
     }

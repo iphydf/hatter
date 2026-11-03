@@ -2,6 +2,8 @@ package me.jappie.hatter;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.DialogInterface;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -37,6 +39,7 @@ import android.media.ImageReader;
 import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Looper;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -46,8 +49,25 @@ import android.net.NetworkCapabilities;
 import android.Manifest;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.content.res.Configuration;
+import android.content.res.TypedArray;
+import android.graphics.Outline;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
+import android.widget.AbsListView;
+import android.widget.BaseAdapter;
+import android.widget.FrameLayout;
+import android.widget.ListView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import java.util.Arrays;
+import java.util.WeakHashMap;
+import java.util.function.Consumer;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.view.Choreographer;
@@ -71,6 +91,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
 
     private native void renderUI();
     private native void onButtonClick(View view);
+    private native void onLongPress(int callbackId);
     private native void onTextChange(View view, String text);
     private native void onLifecycleCreate();
     private native void onLifecycleStart();
@@ -79,6 +100,12 @@ public class HatterActivity extends Activity implements View.OnClickListener {
     private native void onLifecycleStop();
     private native void onLifecycleDestroy();
     private native void onLifecycleLowMemory();
+    private native boolean onBackPressedNative();
+    private native void onNotificationOpenedNative(byte[] key);
+    private native int onLazyBindNative(int listId, int rowId, int position);
+    private native long lazyItemKeyNative(int listId, int position);
+    private native View nodeViewNative(int nodeId);
+    private native void onFilePickedNative(byte[] path, byte[] name, long size);
     private native void onPermissionResult(int requestCode, int statusCode);
     private native void onSecureStorageResult(int requestId, int statusCode, String value);
     private native void onBleScanResult(String deviceName, String deviceAddress, int rssi,
@@ -708,6 +735,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
     public void showDialog(final int requestId, String title, String message,
                            String btn1, String btn2, String btn3) {
         final boolean[] buttonPressed = {false};
+        asking = activity -> activity.showDialog(requestId, title, message, btn1, btn2, btn3);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle(title);
@@ -717,6 +745,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
             @Override
             public void onClick(DialogInterface dialog, int which) {
                 buttonPressed[0] = true;
+                asking = null;
                 onDialogResult(requestId, 0); // DIALOG_BUTTON_1
             }
         });
@@ -726,6 +755,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
                     buttonPressed[0] = true;
+                    asking = null;
                     onDialogResult(requestId, 1); // DIALOG_BUTTON_2
                 }
             });
@@ -736,6 +766,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
                     buttonPressed[0] = true;
+                    asking = null;
                     onDialogResult(requestId, 2); // DIALOG_BUTTON_3
                 }
             });
@@ -745,6 +776,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
             @Override
             public void onDismiss(DialogInterface dialog) {
                 if (!buttonPressed[0]) {
+                    asking = null;
                     onDialogResult(requestId, 3); // DIALOG_DISMISSED
                 }
             }
@@ -761,6 +793,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
      */
     public void showBottomSheet(final int requestId, String title, String items) {
         final boolean[] itemSelected = {false};
+        asking = activity -> activity.showBottomSheet(requestId, title, items);
         String[] itemLabels = items.split("\n");
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
@@ -769,6 +802,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
             @Override
             public void onClick(DialogInterface dialog, int which) {
                 itemSelected[0] = true;
+                asking = null;
                 onBottomSheetResult(requestId, which);
             }
         });
@@ -776,6 +810,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
             @Override
             public void onDismiss(DialogInterface dialog) {
                 if (!itemSelected[0]) {
+                    asking = null;
                     onBottomSheetResult(requestId, -1); // BOTTOM_SHEET_DISMISSED
                 }
             }
@@ -915,7 +950,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
 
     /**
      * Start receiving GPS location updates. Called from native code via JNI.
-     * Uses LocationManager (AOSP built-in) with GPS_PROVIDER.
+     * Uses LocationManager (AOSP built-in) with the network and GPS providers.
      * Updates are delivered via onLocationResult JNI callback.
      */
     public void startLocationUpdates() {
@@ -947,8 +982,12 @@ public class HatterActivity extends Activity implements View.OnClickListener {
                 public void onStatusChanged(String provider, int status, Bundle extras) {}
             };
 
-            locationManager.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER, 1000, 0, locationListener);
+            // The network gives a fix indoors and sooner, GPS a finer one.
+            for (String provider : new String[] {LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER}) {
+                if (locationManager.isProviderEnabled(provider)) {
+                    locationManager.requestLocationUpdates(provider, 1000, 0, locationListener);
+                }
+            }
         } catch (SecurityException e) {
             android.util.Log.e("LocationBridge",
                 "startLocationUpdates: permission denied: " + e.getMessage());
@@ -1057,6 +1096,7 @@ public class HatterActivity extends Activity implements View.OnClickListener {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        notificationOpened(intent);
         if (intent.getData() != null && pendingAuthRequestId >= 0) {
             authRedirectReceived = true;
             onAuthSessionResult(pendingAuthRequestId, 0,
@@ -1425,12 +1465,137 @@ public class HatterActivity extends Activity implements View.OnClickListener {
         }
     }
 
+    /** Whether to show over the lock screen and turn the screen on, as for a call. */
+    private static volatile boolean overLockScreen;
+    private static java.lang.ref.WeakReference<HatterActivity> created =
+        new java.lang.ref.WeakReference<>(null);
+
+    /** From any thread. */
+    static void setOverLockScreen(boolean on) {
+        overLockScreen = on;
+        HatterActivity activity = created.get();
+        if (activity != null) {
+            activity.runOnUiThread(activity::applyOverLockScreen);
+        }
+    }
+
+    private void applyOverLockScreen() {
+        boolean on = overLockScreen;
+        if (android.os.Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(on);
+            setTurnScreenOn(on);
+        } else {
+            int flags = android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON;
+            if (on) {
+                getWindow().addFlags(flags);
+            } else {
+                getWindow().clearFlags(flags);
+            }
+        }
+    }
+
+    /** Whether the screen stays on while we show, as during a call. */
+    private static volatile boolean keepScreenOn;
+
+    /** From any thread. */
+    static void setKeepScreenOn(boolean on) {
+        keepScreenOn = on;
+        HatterActivity activity = created.get();
+        if (activity != null) {
+            activity.runOnUiThread(activity::applyKeepScreenOn);
+        }
+    }
+
+    private void applyKeepScreenOn() {
+        if (keepScreenOn) {
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        created = new java.lang.ref.WeakReference<>(this);
+        if (savedInstanceState != null) {
+            restorePending(savedInstanceState);
+        }
+        applyOverLockScreen();
+        applyKeepScreenOn();
         onLifecycleCreate();
         // Render UI from Haskell instead of XML layout
         renderUI();
+        @SuppressWarnings("unchecked")
+        Consumer<HatterActivity> open = (Consumer<HatterActivity>) getLastNonConfigurationInstance();
+        if (open != null) {
+            open.accept(this);
+        }
+        // Not again when Android brings back the activity or its task.
+        if (savedInstanceState == null
+                && (getIntent().getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) {
+            notificationOpened(getIntent());
+        }
+    }
+
+    /**
+     * The dialog or sheet showing, shown again by an activity recreated for
+     * a configuration change: Android drops it without an answer.
+     */
+    private Consumer<HatterActivity> asking;
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public Object onRetainNonConfigurationInstance() {
+        return asking;
+    }
+
+    private static final String PENDING_SIDES = "hatter.pictureSides";
+    private static final String PENDING_LIMIT = "hatter.pictureLimit";
+    private static final String PENDING_SAVING = "hatter.saving";
+    private static final String PENDING_CAPTURING = "hatter.capturing";
+
+    /**
+     * What a picker or camera app was asked for, whose answer may come to an
+     * activity recreated meanwhile.
+     */
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putIntArray(PENDING_SIDES, pictureSides);
+        state.putInt(PENDING_LIMIT, pictureLimit);
+        if (saving != null) {
+            state.putString(PENDING_SAVING, saving.getPath());
+        }
+        if (capturing != null) {
+            state.putString(PENDING_CAPTURING, capturing.getPath());
+        }
+    }
+
+    private void restorePending(Bundle state) {
+        pictureSides = state.getIntArray(PENDING_SIDES);
+        pictureLimit = state.getInt(PENDING_LIMIT);
+        String path = state.getString(PENDING_SAVING);
+        saving = path == null ? null : new java.io.File(path);
+        path = state.getString(PENDING_CAPTURING);
+        capturing = path == null ? null : new java.io.File(path);
+    }
+
+    /** Tell the app which of its notifications opened it, if one did. */
+    private void notificationOpened(Intent intent) {
+        String key = intent.getStringExtra(HatterNotifications.EXTRA_KEY);
+        if (key != null) {
+            // Only once, not again when the activity is recreated.
+            intent.removeExtra(HatterNotifications.EXTRA_KEY);
+            if (intent.getBooleanExtra(HatterNotifications.EXTRA_ANSWER, false)) {
+                intent.removeExtra(HatterNotifications.EXTRA_ANSWER);
+                HatterNotifications.cancel(this, key);
+                HatterNotifications.pressed(key, HatterNotifications.ANSWER);
+            } else {
+                onNotificationOpenedNative(key.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+        }
     }
 
     @Override
@@ -1459,6 +1624,493 @@ public class HatterActivity extends Activity implements View.OnClickListener {
      */
     public void requestFocusOnView(final View view) {
         view.post(view::requestFocus);
+    }
+
+    // Layout fields, as UIBridge.h numbers them from UI_PROP_WIDTH.
+    private static final int LAYOUT_WIDTH = 0;
+    private static final int LAYOUT_HEIGHT = 1;
+    private static final int LAYOUT_WEIGHT = 2;
+    private static final int LAYOUT_ALIGN_SELF = 3;
+    private static final int LAYOUT_MARGIN = 4;
+    private static final int LAYOUT_FIELDS = 5;
+
+    // Set before a view has a parent, so applied in the kind of layout
+    // parameters its parent takes once it has one. NaN for unset.
+    private final WeakHashMap<View, float[]> layoutFields = new WeakHashMap<>();
+
+    /**
+     * Set one layout field of a view. Called from native code. Widths and
+     * heights are pixels, or MATCH_PARENT (-1).
+     */
+    public void setLayoutField(View view, int field, float value) {
+        float[] fields = layoutFields.get(view);
+        if (fields == null) {
+            fields = new float[LAYOUT_FIELDS];
+            Arrays.fill(fields, Float.NaN);
+            layoutFields.put(view, fields);
+        }
+        fields[field] = value;
+        applyLayout(view);
+    }
+
+    /**
+     * Apply a view's layout fields over its parent's defaults. Called from
+     * native code once the view is added to a parent.
+     */
+    public void applyLayout(View view) {
+        float[] fields = layoutFields.get(view);
+        if (fields == null || !(view.getParent() instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup parent = (ViewGroup) view.getParent();
+        boolean linear = parent instanceof LinearLayout;
+        boolean column = linear
+            && ((LinearLayout) parent).getOrientation() == LinearLayout.VERTICAL;
+        // The defaults the parent gives a child added without parameters.
+        int width = linear && !column ? ViewGroup.LayoutParams.WRAP_CONTENT
+                                      : ViewGroup.LayoutParams.MATCH_PARENT;
+        int height = linear ? ViewGroup.LayoutParams.WRAP_CONTENT
+                            : ViewGroup.LayoutParams.MATCH_PARENT;
+        int gravity = -1;
+        if (!Float.isNaN(fields[LAYOUT_ALIGN_SELF])) {
+            int align = (int) fields[LAYOUT_ALIGN_SELF];
+            if (align == 3) {
+                // Stretch: fill across the axis, or all of a Stack.
+                if (column || !linear) width = ViewGroup.LayoutParams.MATCH_PARENT;
+                if (!column) height = ViewGroup.LayoutParams.MATCH_PARENT;
+            } else if (column) {
+                width = ViewGroup.LayoutParams.WRAP_CONTENT;
+                gravity = align == 0 ? Gravity.START
+                        : align == 1 ? Gravity.CENTER_HORIZONTAL : Gravity.END;
+            } else if (linear) {
+                gravity = align == 0 ? Gravity.TOP
+                        : align == 1 ? Gravity.CENTER_VERTICAL : Gravity.BOTTOM;
+            } else {
+                width = ViewGroup.LayoutParams.WRAP_CONTENT;
+                height = ViewGroup.LayoutParams.WRAP_CONTENT;
+                gravity = align == 0 ? Gravity.TOP | Gravity.START
+                        : align == 1 ? Gravity.CENTER : Gravity.BOTTOM | Gravity.END;
+            }
+        }
+        if (!Float.isNaN(fields[LAYOUT_WIDTH])) width = (int) fields[LAYOUT_WIDTH];
+        if (!Float.isNaN(fields[LAYOUT_HEIGHT])) height = (int) fields[LAYOUT_HEIGHT];
+        ViewGroup.MarginLayoutParams params;
+        if (linear) {
+            LinearLayout.LayoutParams linearParams = new LinearLayout.LayoutParams(width, height);
+            linearParams.gravity = gravity;
+            if (!Float.isNaN(fields[LAYOUT_WEIGHT])) linearParams.weight = fields[LAYOUT_WEIGHT];
+            params = linearParams;
+        } else if (parent instanceof FrameLayout) {
+            params = new FrameLayout.LayoutParams(width, height, gravity);
+        } else {
+            return;
+        }
+        if (!Float.isNaN(fields[LAYOUT_MARGIN])) {
+            int margin = (int) fields[LAYOUT_MARGIN];
+            params.setMargins(margin, margin, margin, margin);
+        }
+        view.setLayoutParams(params);
+    }
+
+    /**
+     * Round a view's corners, clipping its background and content. Called
+     * from native code.
+     */
+    public void setCornerRadius(View view, final float radius) {
+        view.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View v, Outline outline) {
+                outline.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radius);
+            }
+        });
+        view.setClipToOutline(radius > 0);
+    }
+
+    /** A text's font: 1 bold, 2 monospace. Called from native code. */
+    public void setFontStyle(TextView view, int style) {
+        view.setTypeface(android.graphics.Typeface.create(
+            (style & 2) != 0 ? android.graphics.Typeface.MONOSPACE : android.graphics.Typeface.DEFAULT,
+            (style & 1) != 0 ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
+    }
+
+    /**
+     * Show at most this many lines of a view's text, ending in an ellipsis
+     * where it is cut, unless it is being edited. Called from native code.
+     */
+    public void setMaxLines(TextView view, int lines) {
+        view.setMaxLines(lines);
+        if (!(view instanceof EditText)) {
+            view.setEllipsize(TextUtils.TruncateAt.END);
+        }
+    }
+
+    /**
+     * Show the theme's touch ripple on a tappable view that isn't a button.
+     * Called from native code.
+     */
+    public void setTapFeedback(View view) {
+        TypedArray attributes = obtainStyledAttributes(
+            new int[] {android.R.attr.selectableItemBackground});
+        view.setForeground(attributes.getDrawable(0));
+        attributes.recycle();
+    }
+
+    private final WeakHashMap<View, Boolean> keptAtEnd = new WeakHashMap<>();
+
+    /**
+     * Keep a scroll view at its end, as chats are: its content sits at the
+     * bottom while it doesn't fill it, and follows the end as it grows or
+     * the view shrinks, unless scrolled away from it. Called from native code.
+     */
+    public void keepAtEnd(final View view) {
+        if (view instanceof ListView) {
+            ListView list = (ListView) view;
+            list.setStackFromBottom(true);
+            list.setTranscriptMode(AbsListView.TRANSCRIPT_MODE_NORMAL);
+            return;
+        }
+        final ScrollView scroll = (ScrollView) view;
+        if (keptAtEnd.put(scroll, Boolean.TRUE) != null) {
+            return;
+        }
+        scroll.setFillViewport(true);
+        final View content = scroll.getChildAt(0);
+        if (content instanceof LinearLayout) {
+            ((LinearLayout) content).setGravity(Gravity.BOTTOM);
+        }
+        final boolean[] atEnd = {true};
+        scroll.setOnScrollChangeListener((v, x, y, oldX, oldY) ->
+            atEnd[0] = !scroll.canScrollVertically(1));
+        View.OnLayoutChangeListener follow = (v, left, top, right, bottom,
+                                              oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (atEnd[0]) {
+                scroll.post(() -> scroll.scrollTo(0, content.getHeight()));
+            }
+        };
+        content.addOnLayoutChangeListener(follow);
+        scroll.addOnLayoutChangeListener(follow);
+    }
+
+    /** A lazy column's adapter: its rows come from native code, by the list's node ID. */
+    private final class LazyAdapter extends BaseAdapter {
+        private final int listId;
+        private int count;
+        // The node ID of each row view the list was given.
+        private final WeakHashMap<View, Integer> rowIds = new WeakHashMap<>();
+
+        LazyAdapter(int listId) {
+            this.listId = listId;
+        }
+
+        @Override public int getCount() { return count; }
+        @Override public Object getItem(int position) { return null; }
+        // So the list keeps the item on screen when items before it change.
+        @Override public boolean hasStableIds() { return true; }
+        @Override public long getItemId(int position) { return lazyItemKeyNative(listId, position); }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            Integer given = convertView == null ? null : rowIds.get(convertView);
+            int rowId = onLazyBindNative(listId, given == null ? 0 : given, position);
+            View row = rowId == 0 ? null : nodeViewNative(rowId);
+            if (row == null) {
+                return new View(HatterActivity.this);
+            }
+            rowIds.put(row, rowId);
+            return row;
+        }
+    }
+
+    private final WeakHashMap<ListView, LazyAdapter> lazyAdapters = new WeakHashMap<>();
+
+    /** Make a list lazy, its rows asked for by its node ID. Called from native code. */
+    public void initLazyList(ListView list, int listId) {
+        LazyAdapter adapter = new LazyAdapter(listId);
+        lazyAdapters.put(list, adapter);
+        list.setDivider(null);
+        list.setSelector(android.R.color.transparent);
+        list.setAdapter(adapter);
+    }
+
+    /** Give a lazy list its number of items, and have it show them again. Called from native code. */
+    public void setLazyCount(ListView list, int count) {
+        LazyAdapter adapter = lazyAdapters.get(list);
+        if (adapter != null) {
+            adapter.count = count;
+            adapter.notifyDataSetChanged();
+        }
+    }
+
+    // Above the ids Hatter's other requests count up from 0.
+    private static final int PICK_FILE_REQUEST = 0x7e00;
+
+    /** Let the user pick a file of a MIME type. Called from native code. */
+    public void pickFile(String mimeType) {
+        startActivityForResult(HatterFiles.pickIntent(mimeType), PICK_FILE_REQUEST);
+    }
+
+    /** As pickFile, for several. Called from native code. */
+    public void pickFiles(String mimeType) {
+        startActivityForResult(
+            HatterFiles.pickIntent(mimeType).putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true),
+            PICK_FILE_REQUEST);
+    }
+
+    private static final int PICTURE_REQUEST = 0x7e02;
+    private int[] pictureSides;
+    private int pictureLimit;
+    private native void onPicturePickedNative(byte[] png);
+
+    /** Let the user pick a picture, as a square PNG. Called from native code. */
+    public void pickPicture(int[] sides, int limit) {
+        pictureSides = sides;
+        pictureLimit = limit;
+        startActivityForResult(HatterFiles.pickIntent("image/*"), PICTURE_REQUEST);
+    }
+
+    private static final int SAVE_REQUEST = 0x7e03;
+    /** The file being saved where the user chooses. */
+    private java.io.File saving;
+
+    /** Let the user save a file, which is deleted afterwards. Called from native code, with UTF-8. */
+    public void saveFile(byte[] path, byte[] name, String mimeType) {
+        saving = new java.io.File(new String(path, java.nio.charset.StandardCharsets.UTF_8));
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(mimeType)
+            .putExtra(Intent.EXTRA_TITLE, new String(name, java.nio.charset.StandardCharsets.UTF_8));
+        startActivityForResult(intent, SAVE_REQUEST);
+    }
+
+    private static final int CAPTURE_REQUEST = 0x7e01;
+    /** Where the camera app writes the picture being taken. */
+    private java.io.File capturing;
+
+    /** Take a picture with the camera app. Called from native code. */
+    public void capturePicture() {
+        java.io.File dir = HatterFileProvider.captureDir(this);
+        dir.mkdirs();
+        capturing = new java.io.File(dir, "IMG_" + System.currentTimeMillis() + ".jpg");
+        Uri uri = new Uri.Builder()
+            .scheme(android.content.ContentResolver.SCHEME_CONTENT)
+            .authority(HatterFiles.authority(this))
+            .path(capturing.getAbsolutePath())
+            .build();
+        Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+            .putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+            .addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, CAPTURE_REQUEST);
+        } catch (android.content.ActivityNotFoundException e) {
+            android.widget.Toast.makeText(this, "No camera app", android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == SAVE_REQUEST) {
+            final java.io.File file = saving;
+            saving = null;
+            if (file == null) {
+                return;
+            }
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                file.delete();
+                return;
+            }
+            final Uri uri = data.getData();
+            new Thread(() -> {
+                boolean saved = false;
+                try (java.io.InputStream in = new java.io.FileInputStream(file);
+                     java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
+                    if (out != null) {
+                        byte[] buffer = new byte[64 * 1024];
+                        for (int n; (n = in.read(buffer)) > 0;) {
+                            out.write(buffer, 0, n);
+                        }
+                        saved = true;
+                    }
+                } catch (java.io.IOException | SecurityException e) {
+                    android.util.Log.e("HatterFiles", "Not saved", e);
+                }
+                file.delete();
+                final boolean done = saved;
+                runOnUiThread(() -> android.widget.Toast.makeText(this, done ? "Saved" : "Couldn't save",
+                    android.widget.Toast.LENGTH_SHORT).show());
+            }).start();
+            return;
+        }
+        if (requestCode == PICTURE_REQUEST) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                return;
+            }
+            final Uri uri = data.getData();
+            final int[] sides = pictureSides;
+            final int limit = pictureLimit;
+            if (sides == null) {
+                return;
+            }
+            new Thread(() -> {
+                byte[] png = HatterFiles.squarePng(this, uri, sides, limit);
+                if (png != null) {
+                    runOnUiThread(() -> onPicturePickedNative(png));
+                }
+            }).start();
+            return;
+        }
+        if (requestCode == CAPTURE_REQUEST) {
+            java.io.File taken = capturing;
+            capturing = null;
+            if (taken == null) {
+                return;
+            }
+            if (resultCode == RESULT_OK && taken.length() > 0) {
+                onFilePickedNative(
+                    taken.getAbsolutePath().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    taken.getName().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    taken.length());
+            } else {
+                taken.delete();
+            }
+            return;
+        }
+        if (requestCode != PICK_FILE_REQUEST || resultCode != RESULT_OK || data == null) {
+            return;
+        }
+        final java.util.List<Uri> uris = new java.util.ArrayList<>();
+        if (data.getClipData() != null) {
+            for (int i = 0; i < data.getClipData().getItemCount(); i++) {
+                uris.add(data.getClipData().getItemAt(i).getUri());
+            }
+        } else if (data.getData() != null) {
+            uris.add(data.getData());
+        }
+        new Thread(() -> {
+            for (Uri uri : uris) {
+                try {
+                    final HatterFiles.Picked picked = HatterFiles.copyPicked(this, uri);
+                    runOnUiThread(() -> onFilePickedNative(
+                        picked.file.getAbsolutePath().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        picked.name.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        picked.file.length()));
+                } catch (java.io.IOException | SecurityException e) {
+                    android.util.Log.e("HatterFiles", "Picked file not copied", e);
+                }
+            }
+        }).start();
+    }
+
+    /** Show one of the app's files in another app. Called from native code, with UTF-8. */
+    public void openFile(byte[] path) {
+        HatterFiles.open(this, new String(path, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** Open a web or mail address in another app. Called from native code, with UTF-8. */
+    public void openUri(byte[] uri) {
+        Intent intent = new Intent(Intent.ACTION_VIEW,
+            android.net.Uri.parse(new String(uri, java.nio.charset.StandardCharsets.UTF_8)));
+        try {
+            startActivity(intent);
+        } catch (android.content.ActivityNotFoundException e) {
+            android.widget.Toast.makeText(this, "No app opens this link", android.widget.Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** A picture's width and height as it shows, or null. Called from native code, with UTF-8. */
+    public int[] imageSize(byte[] path) {
+        return HatterFiles.size(new String(path, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** A picture from bytes, at the size the screen needs. Called from native code. */
+    public android.graphics.Bitmap decodeImageData(byte[] data) {
+        return HatterFiles.decodeBytes(this, data);
+    }
+
+    /** A picture from a file, at the size the screen needs. Called from native code, with UTF-8. */
+    public android.graphics.Bitmap decodeImageFile(byte[] path) {
+        return HatterFiles.decode(this, new String(path, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** Put text on the clipboard, and say so. Called from native code. */
+    public void copyText(String text) {
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        clipboard.setPrimaryClip(ClipData.newPlainText(text, text));
+        // Android 13 on says so itself.
+        if (android.os.Build.VERSION.SDK_INT < 33) {
+            runOnUiThread(() -> android.widget.Toast.makeText(this, "Copied", android.widget.Toast.LENGTH_SHORT).show());
+        }
+    }
+
+    // Hatter.Action.ListPosition's numbers.
+    private static final int LIST_START = 0;
+    private static final int LIST_MIDDLE = 1;
+    private static final int LIST_END = 2;
+
+    private native void onScrolled(int callbackId, int position);
+
+    /** Tell a callback when a list shows its start, its end or neither. Called from native code. */
+    public void setScrollWatch(View view, int callbackId) {
+        if (!(view instanceof android.widget.AbsListView)) {
+            return;
+        }
+        final int[] was = {LIST_END};
+        ((android.widget.AbsListView) view).setOnScrollListener(new android.widget.AbsListView.OnScrollListener() {
+            @Override
+            public void onScrollStateChanged(android.widget.AbsListView list, int state) {}
+
+            @Override
+            public void onScroll(android.widget.AbsListView list, int first, int visible, int total) {
+                View top = list.getChildAt(0);
+                View last = list.getChildAt(list.getChildCount() - 1);
+                boolean atEnd = total == 0 || (first + visible >= total
+                    && (last == null || last.getBottom() <= list.getHeight() - list.getPaddingBottom()));
+                boolean atStart = first == 0 && (top == null || top.getTop() >= list.getPaddingTop());
+                int position = atEnd ? LIST_END : atStart ? LIST_START : LIST_MIDDLE;
+                if (position != was[0]) {
+                    was[0] = position;
+                    // Later, as a list scrolls while it is laid out, which
+                    // can be while native code renders.
+                    list.post(() -> onScrolled(callbackId, position));
+                }
+            }
+        });
+    }
+
+    /** Scroll a list to its end. Called from native code. */
+    public void scrollToEnd(View view) {
+        if (view instanceof android.widget.AbsListView) {
+            android.widget.AbsListView list = (android.widget.AbsListView) view;
+            list.smoothScrollToPosition(Math.max(0, list.getCount() - 1));
+        }
+    }
+
+    /** Fire a callback when the view is held. Called from native code. */
+    public void setLongPress(View view, int callbackId) {
+        view.setOnLongClickListener(v -> {
+            onLongPress(callbackId);
+            return true;
+        });
+    }
+
+    /** Whether the user wants times on a 24-hour clock. Called from native code. */
+    public boolean is24HourClock() {
+        return android.text.format.DateFormat.is24HourFormat(this);
+    }
+
+    /** Whether the theme shows dark colours. Called from native code. */
+    public boolean isNightMode() {
+        return (getResources().getConfiguration().uiMode
+                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        // The app goes back a screen itself, or leaves it to the platform.
+        if (!onBackPressedNative()) {
+            super.onBackPressed();
+        }
     }
 
     /**
@@ -1522,6 +2174,8 @@ public class HatterActivity extends Activity implements View.OnClickListener {
 
     @Override
     protected void onDestroy() {
+        // A recreated activity runs its own animation loop.
+        stopAnimationLoop();
         super.onDestroy();
         onLifecycleDestroy();
     }
@@ -1569,14 +2223,15 @@ public class HatterActivity extends Activity implements View.OnClickListener {
 
     /**
      * Request a UI re-render from any thread. Posts renderUI() to the
-     * main/UI thread so that JNI env and UI operations are safe.
+     * main/UI thread so that JNI env and UI operations are safe, for the
+     * activity alive when it runs: one recreated meanwhile is the one shown.
      * Called from native code via JNI (redraw_bridge_android.c).
      */
-    public void requestRedraw() {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                renderUI();
+    public static void requestRedraw() {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            HatterActivity activity = created.get();
+            if (activity != null && !activity.isDestroyed()) {
+                activity.renderUI();
             }
         });
     }

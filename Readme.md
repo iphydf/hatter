@@ -356,6 +356,56 @@ nix-build nix/watchos.nix
 Works the same as iOS — produces a static library for watchOS.
 The `watchos/` directory contains the WatchKit app structure.
 
+## Building for browsers
+
+`browser/` runs Hatter apps in a browser. The app is built as
+WebAssembly with GHC's wasm backend, and an Angular host shows its
+widgets as Angular Material components. An app exports its start for
+the page:
+
+```haskell
+foreign export javascript "start" start :: IO ()
+
+start :: IO ()
+start = runBrowser app
+```
+
+To build the demo into `out/` and serve it:
+
+```bash
+cd browser
+nix-shell --run './build.sh hatter-browser-demo out'
+python3 -m http.server -d out
+```
+
+To build the demo and test it in headless Chromium, as CI does:
+
+```bash
+nix-shell browser/shell.nix --run test/browser/test-all.sh
+```
+
+## Building for Linux desktops
+
+`qt/` runs Hatter apps as desktop programs with Qt Quick, so far on
+Linux. A C++ host (`qt/host/`) shows the app's widgets as Qt Quick items
+in a window. The app's `Main` is the same as on Android, built with
+`-no-hs-main` against the package `hatter-qt`, whose C `main` starts Qt
+and the app. The plan, with macOS and Windows still to come, is in
+`docs/qt-quick-desktop-plan.md`.
+
+To build and run the demo:
+
+```bash
+cd qt
+nix-shell --run 'cabal run hatter-qt-demo'
+```
+
+To build the host with its tests and the demo, as CI does:
+
+```bash
+nix-build nix/ci.nix -A qt
+```
+
 ## Desktop development
 
 For fast iteration, build and test natively:
