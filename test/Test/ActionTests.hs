@@ -39,6 +39,9 @@ import Hatter.Render
   , renderWidget
   , dispatchEvent
   , dispatchTextEvent
+  , reattachments
+  , bindLazyRow
+  , lazyItemKey
   )
 import Test.Helpers (withActions, captureStderr)
 
@@ -340,6 +343,15 @@ incrementalRenderTests = testGroup "Incremental rendering"
           assertBool
             ("setNumProp for padding should appear in stderr, got: " ++ stderrOutput)
             ("setNumProp" `isInfixOf` stderrOutput && "10.00" `isInfixOf` stderrOutput)
+
+      , testCase "a style field gone from a reused node is put back" $ do
+          ((), rs) <- withActions (pure ())
+          let row = Text TextConfig { tcLabel = "row", tcFontConfig = Nothing, tcTextColor = Nothing }
+          renderWidget rs (Styled defaultStyle { wsMargin = Just 8.0 } row)
+          ((), stderrOutput) <- captureStderr $ renderWidget rs (Styled defaultStyle row)
+          assertBool
+            ("the margin should go back to unset, got: " ++ stderrOutput)
+            ("setNumProp" `isInfixOf` stderrOutput && "nan" `isInfixOf` stderrOutput)
       ]
 
   , testGroup "TextInput in-place update"
@@ -491,5 +503,37 @@ incrementalRenderTests = testGroup "Incremental rendering"
           -- Each child kept its native node ID despite reordering
           childA1 @?= childA2
           childB1 @?= childB2
+
+      , testCase "only children after a change are taken out and added again" $ do
+          reattachments [1, 2, 3] [1, 2, 3, 4] @?= ([], [4])
+          reattachments [1, 2, 3] [1, 9, 2, 3] @?= ([2, 3], [9, 2, 3])
+          reattachments [1, 2] [2, 1] @?= ([1, 2], [2, 1])
+          reattachments [1, 2] [1, 2] @?= ([], [])
+
+      , testCase "a lazy column renders its items into the rows asked for" $ do
+          ((), rs) <- withActions (pure ())
+          renderWidget rs (LazyColumn (map (item . text) ["A", "B", "C"]))
+          tree <- readIORef (rsRenderedTree rs)
+          listId <- case tree of
+            Just (RenderedLazy _ nodeId _) -> pure nodeId
+            _ -> assertFailure "not a lazy column" >> pure 0
+          row <- bindLazyRow rs listId 0 0
+          assertBool "a new row" (row /= 0)
+          bindLazyRow rs listId row 2 >>= (@?= row)
+          bindLazyRow rs listId row 3 >>= (@?= 0)
+          bindLazyRow rs (listId + 1000) 0 0 >>= (@?= 0)
+
+      , testCase "a lazy column's items are known by their keys, else their positions" $ do
+          ((), rs) <- withActions (pure ())
+          let listOf items = do
+                renderWidget rs (LazyColumn items)
+                tree <- readIORef (rsRenderedTree rs)
+                case tree of
+                  Just (RenderedLazy _ nodeId _) -> pure nodeId
+                  _ -> assertFailure "not a lazy column" >> pure 0
+          keyed <- listOf [keyedItem 7 (text "A"), keyedItem 9 (text "B")]
+          mapM (lazyItemKey rs keyed) [0, 1] >>= (@?= [7, 9])
+          plain <- listOf (map (item . text) ["A", "B"])
+          lazyItemKey rs plain 1 >>= (@?= 1)
       ]
   ]

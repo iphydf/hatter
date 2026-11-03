@@ -19,6 +19,7 @@ data DeviceInfo = DeviceInfo
   , diScreenDensity :: Double  -- ^ Screen density / scale factor (e.g. @2.75@, @3.0@)
   , diScreenWidth   :: Int     -- ^ Screen width in physical pixels (e.g. @1080@)
   , diScreenHeight  :: Int     -- ^ Screen height in physical pixels (e.g. @2400@)
+  , diGraphics      :: Text    -- ^ What draws the window (e.g. @\"OpenGL: Mesa Intel(R) UHD Graphics 620\"@, @\"software\"@), or empty where the platform doesn't say
   } deriving (Show, Eq)
 
 foreign import ccall "getDeviceModel" c_getDeviceModel :: IO CString
@@ -26,12 +27,14 @@ foreign import ccall "getDeviceOsVersion" c_getDeviceOsVersion :: IO CString
 foreign import ccall "getDeviceScreenDensity" c_getDeviceScreenDensity :: IO CString
 foreign import ccall "getDeviceScreenWidth" c_getDeviceScreenWidth :: IO CString
 foreign import ccall "getDeviceScreenHeight" c_getDeviceScreenHeight :: IO CString
+foreign import ccall "getDeviceGraphics" c_getDeviceGraphics :: IO CString
 
 -- | Query all device information from the host platform.
 --
 -- * Android: values set from @Build.MODEL@, @Build.VERSION.RELEASE@, @DisplayMetrics@
 -- * iOS: values set from @utsname@, @UIDevice@, @UIScreen@
--- * Desktop: returns fallback values (@\"desktop\"@, @\"unknown\"@, @1.0@, @0@, @0@)
+-- * Qt: values set from @QSysInfo@, and what draws the window
+-- * Desktop: returns fallback values (@\"desktop\"@, @\"unknown\"@, @1.0@, @0@, @0@, @\"\"@)
 getDeviceInfo :: IO DeviceInfo
 getDeviceInfo = do
   model         <- peekText =<< c_getDeviceModel
@@ -39,12 +42,14 @@ getDeviceInfo = do
   densityStr    <- peekString =<< c_getDeviceScreenDensity
   widthStr      <- peekString =<< c_getDeviceScreenWidth
   heightStr     <- peekString =<< c_getDeviceScreenHeight
+  graphics      <- peekText =<< c_getDeviceGraphics
   pure DeviceInfo
     { diModel         = model
     , diOsVersion     = osVersion
     , diScreenDensity = parseDouble densityStr
     , diScreenWidth   = parseInt widthStr
     , diScreenHeight  = parseInt heightStr
+    , diGraphics      = graphics
     }
 
 -- | Log all device info fields via 'platformLog'.
@@ -57,6 +62,7 @@ haskellLogDeviceInfo = do
   platformLog ("DeviceInfo screenDensity: " <> Text.pack (show (diScreenDensity info)))
   platformLog ("DeviceInfo screenWidth: " <> Text.pack (show (diScreenWidth info)))
   platformLog ("DeviceInfo screenHeight: " <> Text.pack (show (diScreenHeight info)))
+  platformLog ("DeviceInfo graphics: " <> diGraphics info)
 
 foreign export ccall haskellLogDeviceInfo :: IO ()
 

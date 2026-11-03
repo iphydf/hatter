@@ -66,7 +66,7 @@ makeDummyApp :: (LifecycleEvent -> IO ()) -> IO MobileApp
 makeDummyApp callback = do
   actionState <- newActionState
   pure MobileApp
-    { maContext     = MobileContext { onLifecycle = callback, onError = \_ -> pure () }
+    { maContext     = MobileContext { onLifecycle = callback, onError = \_ -> pure (), onBack = pure False, onNotificationOpened = \_ -> pure (), onCallButton = \_ _ -> pure (), onFilePicked = \_ -> pure (), onPicturePicked = \_ -> pure (), onRendered = \_ -> pure () }
     , maView        = \_userState -> pure (Text TextConfig { tcLabel = "dummy", tcFontConfig = Nothing, tcTextColor = Nothing })
     , maActionState = actionState
     }
@@ -122,6 +122,8 @@ viewIsErrorWidget ctxPtr = do
     Text _                   -> pure False
     Button _                 -> pure False
     TextInput _              -> pure False
+    Switch _                 -> pure False
+    LazyColumn _             -> pure False
     Image _                  -> pure False
     WebView _                -> pure False
     MapView _                -> pure False
@@ -129,6 +131,9 @@ viewIsErrorWidget ctxPtr = do
     Stack _                  -> pure False
     Styled _ _               -> pure False
     Animated _ _             -> pure False
+    Tappable _ _             -> pure False
+    LongPressable _ _        -> pure False
+    Scrolled _ _ _           -> pure False
 
 -- | Capture stderr output produced during an IO action.
 captureStderr :: IO a -> IO (a, String)

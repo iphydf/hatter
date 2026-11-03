@@ -23,14 +23,18 @@ import Hatter
   , UserState(..)
   , Action(..)
   , OnChange(..)
+  , OnScroll(..)
+  , ListPosition(..)
   , createAction
   , createOnChange
+  , createOnScroll
   )
 import Hatter.Widget
   ( ButtonConfig(..)
   , Color(..)
   , coloredText
   , FontConfig(..)
+  , fontOfSize
   , ImageConfig(..)
   , ImageSource(..)
   , InputType(..)
@@ -48,13 +52,14 @@ import Hatter.Widget
   , colorFromText
   , colorToHex
   , column
+  , switch
   , defaultStyle
   , item
   , row
   , scrollColumn
   , scrollRow
   )
-import Hatter.Render (RenderState(..), RenderedNode(..), renderWidget, dispatchEvent, dispatchTextEvent)
+import Hatter.Render (RenderState(..), RenderedNode(..), renderWidget, dispatchEvent, dispatchTextEvent, dispatchScrollEvent)
 import Hatter.Permission (newPermissionState)
 import Hatter.PlatformSignIn (newPlatformSignInState)
 import Hatter.SecureStorage (newSecureStorageState)
@@ -206,6 +211,15 @@ scrollViewTests = testGroup "ScrollView"
         [ item (Text TextConfig { tcLabel = "item 1", tcFontConfig = Nothing, tcTextColor = Nothing })
         , item (Text TextConfig { tcLabel = "item 2", tcFontConfig = Nothing, tcTextColor = Nothing })
         ] True))
+
+  , testCase "a switch fires its action as it's flipped" $ do
+      ref <- newIORef False
+      (flipHandle, rs) <- withActions $
+        createAction (modifyIORef' ref not)
+      renderWidget rs $ column [switch False flipHandle]
+      dispatchEvent rs (actionId flipHandle)
+      flipped <- readIORef ref
+      flipped @?= True
 
   , testCase "button inside scrollable Column fires its callback" $ do
       ref <- newIORef (0 :: Int)
@@ -414,6 +428,27 @@ textInputTests = testGroup "TextInput"
       click @?= True
       text  @?= show ("typed" :: String)
 
+  , testCase "a held widget that is also tapped fires each its own action, again after a re-render" $ do
+      fired <- newIORef ([] :: [String])
+      ((tap, hold), rs) <- withActions $
+        (,) <$> createAction (modifyIORef' fired ("tap" :)) <*> createAction (modifyIORef' fired ("hold" :))
+      let widget = Tappable tap (LongPressable hold
+            (Text TextConfig { tcLabel = "message", tcFontConfig = Nothing, tcTextColor = Nothing }))
+      renderWidget rs widget
+      renderWidget rs widget
+      dispatchEvent rs (actionId hold)
+      dispatchEvent rs (actionId tap)
+      readIORef fired >>= (@?= ["tap", "hold"])
+
+  , testCase "a list tells where it is, and scrolls to its end on a new number" $ do
+      heard <- newIORef []
+      (change, rs) <- withActions $ createOnScroll (\p -> modifyIORef' heard (p :))
+      let list n = Scrolled change n (LazyColumn [item (Text TextConfig { tcLabel = "a", tcFontConfig = Nothing, tcTextColor = Nothing })])
+      renderWidget rs (list 0)
+      renderWidget rs (list 1)
+      mapM_ (dispatchScrollEvent rs (onScrollId change)) [1, 0, 2, 3, 4]
+      readIORef heard >>= (@?= [ListBoth, ListEnd, ListStart, ListMiddle])
+
   , testCase "re-render preserves text callbacks" $ do
       ref <- newIORef ("" :: String)
       (changeHandle, rs) <- withActions $
@@ -571,7 +606,7 @@ styledTests = testGroup "Styled"
   [ testCase "Styled Text renders without error" $ do
       ((), rs) <- withActions (pure ())
       renderWidget rs $ Styled (defaultStyle { wsPadding = Just 8.0 })
-        (Text TextConfig { tcLabel = "styled", tcFontConfig = Just (FontConfig 20.0), tcTextColor = Nothing })
+        (Text TextConfig { tcLabel = "styled", tcFontConfig = Just (fontOfSize 20.0), tcTextColor = Nothing })
 
   , testCase "Styled Button fires callback" $ do
       ref <- newIORef (0 :: Int)
@@ -580,7 +615,7 @@ styledTests = testGroup "Styled"
       renderWidget rs $ Styled (defaultStyle)
         (Button ButtonConfig
           { bcLabel = "tap", bcAction = clickHandle
-          , bcFontConfig = Just (FontConfig 16.0), bcTextColor = Nothing })
+          , bcFontConfig = Just (fontOfSize 16.0), bcTextColor = Nothing })
       dispatchEvent rs (actionId clickHandle)
       count <- readIORef ref
       count @?= 1
@@ -603,7 +638,7 @@ styledTests = testGroup "Styled"
       renderWidget rs $
         Styled (defaultStyle { wsPadding = Just 12.0 })
           (Styled (defaultStyle)
-            (Text TextConfig { tcLabel = "double styled", tcFontConfig = Just (FontConfig 18.0), tcTextColor = Nothing }))
+            (Text TextConfig { tcLabel = "double styled", tcFontConfig = Just (fontOfSize 18.0), tcTextColor = Nothing }))
 
   , testCase "defaultStyle is a no-op" $ do
       ((), rs) <- withActions (pure ())
