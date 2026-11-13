@@ -54,8 +54,16 @@
 #define UI_PROP_ITEM_COUNT          22
 /* A ListView scrolls to its end when this changes. */
 #define UI_PROP_SCROLL_TO_END       23
-/* A text's font: 1 bold, 2 monospace. */
+/* A text's font: 1 bold, 2 monospace, 4 italic. */
 #define UI_PROP_FONT_STYLE          24
+/* Padding at the top and bottom, after UI_PROP_PADDING set all four. */
+#define UI_PROP_PADDING_Y           25
+/* A corner's radius of the background, clockwise from the top left; NaN
+ * goes back to UI_PROP_CORNER_RADIUS. */
+#define UI_PROP_CORNER_TOP_LEFT     26
+#define UI_PROP_CORNER_TOP_RIGHT    27
+#define UI_PROP_CORNER_BOTTOM_RIGHT 28
+#define UI_PROP_CORNER_BOTTOM_LEFT  29
 
 /* Event types */
 #define UI_EVENT_CLICK       0

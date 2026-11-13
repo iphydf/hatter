@@ -72,6 +72,8 @@ fi
 wait_for_logcat "Picture picked" 60 || true
 
 collect_logcat "picture"
+echo "diag: the app's picture log, and any crash:"
+grep -e "HatterPicture" -e "Lifecycle" -e "FATAL" -e "AndroidRuntime" -e "lowmemorykiller" -e "Killing" -e "Picture picked" "$LOGCAT_FILE" | tail -60 || true
 
 assert_logcat "$LOGCAT_FILE" "Picture picked: [0-9]* bytes" "a large picture comes back as a PNG"
 

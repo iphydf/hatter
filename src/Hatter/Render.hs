@@ -44,8 +44,9 @@ import           Hatter.Action         (Action (..), ActionState, OnChange (..),
                                         lookupScrollAction, lookupTextAction)
 import           Hatter.Animation      (AnimationState (..), registerTween)
 import           Hatter.Widget         (AnimatedConfig (..), ButtonConfig (..),
-                                        Color (..), FontConfig (..),
-                                        FontFamily (..), FontWeight (..),
+                                        Color (..), Corners (..),
+                                        FontConfig (..), FontFamily (..),
+                                        FontSlant (..), FontWeight (..),
                                         ImageConfig (..), ImageSource (..),
                                         InputType (..), Keyframe (..),
                                         LayoutItem (..), LayoutSettings (..),
@@ -176,10 +177,11 @@ inputTypeToInt InputPassword  = 3
 
 -- | Apply a 'FontConfig' to a rendered node if present.
 applyFontConfig :: Int32 -> Maybe FontConfig -> IO ()
-applyFontConfig nodeId (Just (FontConfig size weight family)) = do
+applyFontConfig nodeId (Just (FontConfig size weight family slant)) = do
   Bridge.setNumProp nodeId Bridge.PropFontSize size
   Bridge.setNumProp nodeId Bridge.PropFontStyle
-    ((if weight == FontBold then 1 else 0) + (if family == FontMonospace then 2 else 0))
+    ((if weight == FontBold then 1 else 0) + (if family == FontMonospace then 2 else 0)
+       + (if slant == FontItalic then 4 else 0))
 applyFontConfig _nodeId Nothing = pure ()
 
 -- | Apply a text color to a rendered node if present (the per-config
@@ -215,6 +217,8 @@ applyStyle nodeId style = do
   case wsPadding style of
     Just padding -> Bridge.setNumProp nodeId Bridge.PropPadding padding
     Nothing      -> pure ()
+  -- After the padding, which sets all four sides.
+  mapM_ (Bridge.setNumProp nodeId Bridge.PropPaddingY) (wsPaddingY style)
   case wsTextAlign style of
     Just alignment -> Bridge.setNumProp nodeId Bridge.PropGravity (textAlignToDouble alignment)
     Nothing        -> pure ()
@@ -242,9 +246,18 @@ applyStyle nodeId style = do
   mapM_ (Bridge.setNumProp nodeId Bridge.PropMaxWidth) (wsMaxWidth style)
   mapM_ (Bridge.setNumProp nodeId Bridge.PropMaxLines . fromIntegral) (wsMaxLines style)
   mapM_ (Bridge.setNumProp nodeId Bridge.PropCornerRadius) (wsCornerRadius style)
+  mapM_ (setCorners nodeId) (wsCorners style)
   mapM_ (Bridge.setNumProp nodeId Bridge.PropKeepAtEnd . boolToDouble) (wsKeepAtEnd style)
   where
     boolToDouble enabled = if enabled then 1.0 else 0.0
+
+-- | Each corner's radius, or with NaN, 'wsCornerRadius' again.
+setCorners :: Int32 -> Corners -> IO ()
+setCorners nodeId (Corners topLeft topRight bottomRight bottomLeft) = do
+  Bridge.setNumProp nodeId Bridge.PropCornerTopLeft topLeft
+  Bridge.setNumProp nodeId Bridge.PropCornerTopRight topRight
+  Bridge.setNumProp nodeId Bridge.PropCornerBottomRight bottomRight
+  Bridge.setNumProp nodeId Bridge.PropCornerBottomLeft bottomLeft
 
 -- | Put back what the old style set and the new one leaves alone, as a
 -- node may be reused for another widget, like a lazy list's rows. Keeping
@@ -265,6 +278,9 @@ clearStyle nodeId old new = do
   cleared wsMaxWidth $ Bridge.setNumProp nodeId Bridge.PropMaxWidth unlimited
   cleared wsMaxLines $ Bridge.setNumProp nodeId Bridge.PropMaxLines unlimited
   cleared wsCornerRadius $ Bridge.setNumProp nodeId Bridge.PropCornerRadius 0
+  -- Any padding of the new style is set again after this.
+  cleared wsPaddingY $ Bridge.setNumProp nodeId Bridge.PropPaddingY 0
+  cleared wsCorners $ setCorners nodeId (Corners unset unset unset unset)
   where
     cleared :: (WidgetStyle -> Maybe a) -> IO () -> IO ()
     cleared field = when (isJust (field old) && isNothing (field new))

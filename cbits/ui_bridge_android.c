@@ -134,6 +134,9 @@ static jmethodID g_method_requestFocusOnView;
 static jmethodID g_method_setLayoutField;
 static jmethodID g_method_applyLayout;
 static jmethodID g_method_setCornerRadius;
+static jmethodID g_method_setCorner;
+static jmethodID g_method_setBackgroundColour;
+static jmethodID g_method_setPaddingY;
 static jmethodID g_method_setTapFeedback;
 static jmethodID g_method_isNightMode;
 static jmethodID g_method_is24HourClock;
@@ -442,6 +445,22 @@ static int resolve_jni_ids(JNIEnv *env, jobject activity)
         "setCornerRadius", "(Landroid/view/View;F)V");
     g_method_setTapFeedback = (*env)->GetMethodID(env, actClass,
         "setTapFeedback", "(Landroid/view/View;)V");
+    /* Optional, as an older Activity has no such methods. */
+    g_method_setCorner = (*env)->GetMethodID(env, actClass,
+        "setCorner", "(Landroid/view/View;IF)V");
+    if (!g_method_setCorner) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setBackgroundColour = (*env)->GetMethodID(env, actClass,
+        "setBackgroundColour", "(Landroid/view/View;I)V");
+    if (!g_method_setBackgroundColour) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setPaddingY = (*env)->GetMethodID(env, actClass,
+        "setPaddingY", "(Landroid/view/View;I)V");
+    if (!g_method_setPaddingY) {
+        (*env)->ExceptionClear(env);
+    }
     g_method_isNightMode = (*env)->GetMethodID(env, actClass,
         "isNightMode", "()Z");
     /* Optional, as an older Activity has no such methods. */
@@ -814,7 +833,12 @@ static void android_set_str_prop(int32_t nodeId, int32_t propId, const char *val
     case UI_PROP_BG_COLOR: {
         LOGI("setStrProp(node=%d, bgColor=\"%s\")", nodeId, value);
         jint argb = parse_hex_color(value);
-        (*env)->CallVoidMethod(env, view, g_method_setBackgroundColor, argb);
+        /* In the shape of its corners, where it has its own. */
+        if (g_method_setBackgroundColour) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setBackgroundColour, view, argb);
+        } else {
+            (*env)->CallVoidMethod(env, view, g_method_setBackgroundColor, argb);
+        }
         break;
     }
     case UI_PROP_IMAGE_RESOURCE: {
@@ -933,6 +957,20 @@ static void android_set_num_prop(int32_t nodeId, int32_t propId, double value)
         LOGI("setNumProp(node=%d, padding=%d)", nodeId, px);
         break;
     }
+    case UI_PROP_PADDING_Y:
+        if (g_method_setPaddingY) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setPaddingY, view, (jint)value);
+        }
+        break;
+    case UI_PROP_CORNER_TOP_LEFT:
+    case UI_PROP_CORNER_TOP_RIGHT:
+    case UI_PROP_CORNER_BOTTOM_RIGHT:
+    case UI_PROP_CORNER_BOTTOM_LEFT:
+        if (g_method_setCorner) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setCorner, view,
+                (jint)(propId - UI_PROP_CORNER_TOP_LEFT), (jfloat)value);
+        }
+        break;
     case UI_PROP_WIDTH:
     case UI_PROP_HEIGHT:
     case UI_PROP_WEIGHT:

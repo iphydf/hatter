@@ -156,6 +156,26 @@ void Node::setRadius(double radius)
     background->setProperty("radius", radius);
 }
 
+void Node::setCorner(int corner, double radius)
+{
+    static const char *const names[] = {"topLeftRadius", "topRightRadius", "bottomRightRadius",
+                                        "bottomLeftRadius"};
+    if (!background) {
+        setBackground(Qt::transparent);
+    }
+    QQmlProperty property(background, names[corner]);
+    if (std::isnan(radius)) {
+        property.reset();
+    } else {
+        property.write(radius);
+    }
+}
+
+double Node::vertical() const
+{
+    return std::isnan(paddingY) ? padding : paddingY;
+}
+
 void Node::setHandler(int event, int callback)
 {
     handlers[event] = callback;
@@ -175,9 +195,9 @@ QSizeF Node::measure(const Spec &spec)
         capped = spec.w.mode == Extent::Unbounded ? Extent{Extent::AtMost, maxWidth}
                                                   : Extent{spec.w.mode, std::min(spec.w.size, maxWidth)};
     }
-    const double room = 2 * padding;
-    const QSizeF inner = core({shrink(room, capped), shrink(room, spec.h)});
-    size = {resolve(capped, inner.width() + room), resolve(spec.h, inner.height() + room)};
+    const double across = 2 * padding, down = 2 * vertical();
+    const QSizeF inner = core({shrink(across, capped), shrink(down, spec.h)});
+    size = {resolve(capped, inner.width() + across), resolve(spec.h, inner.height() + down)};
     return size;
 }
 
@@ -356,8 +376,8 @@ void Node::place(double x, double y)
     if (background) {
         background->setSize(size);
     }
-    const QRectF inner(padding, padding, std::max(0.0, size.width() - 2 * padding),
-                       std::max(0.0, size.height() - 2 * padding));
+    const QRectF inner(padding, vertical(), std::max(0.0, size.width() - 2 * padding),
+                       std::max(0.0, size.height() - 2 * vertical()));
     if (content) {
         content->setPosition(inner.topLeft());
         content->setSize(inner.size());

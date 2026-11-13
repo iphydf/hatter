@@ -118,6 +118,11 @@ data PropId
   | PropItemCount
   | PropScrollToEnd
   | PropFontStyle
+  | PropPaddingY
+  | PropCornerTopLeft
+  | PropCornerTopRight
+  | PropCornerBottomRight
+  | PropCornerBottomLeft
   deriving (Show, Eq, Enum, Bounded)
 
 -- | Map a 'PropId' to its C integer code.
@@ -155,6 +160,11 @@ propIdToInt PropMaxLines          = 21
 propIdToInt PropItemCount         = 22
 propIdToInt PropScrollToEnd       = 23
 propIdToInt PropFontStyle         = 24
+propIdToInt PropPaddingY          = 25
+propIdToInt PropCornerTopLeft     = 26
+propIdToInt PropCornerTopRight    = 27
+propIdToInt PropCornerBottomRight = 28
+propIdToInt PropCornerBottomLeft  = 29
 
 -- | Event types corresponding to @UI_EVENT_*@ in @UIBridge.h@.
 data EventType

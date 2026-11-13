@@ -23,6 +23,8 @@ module Hatter.Widget
   , FontConfig(..)
   , FontWeight(..)
   , FontFamily(..)
+  , FontSlant(..)
+  , Corners(..)
   , fontOfSize
   , ImageConfig(..)
   , ImageSource(..)
@@ -88,6 +90,7 @@ data FontConfig = FontConfig
     -- ^ Font size in platform-native units (sp on Android, pt on iOS).
   , fontWeight :: FontWeight
   , fontFamily :: FontFamily
+  , fontSlant  :: FontSlant
   } deriving (Show, Eq)
 
 data FontWeight = FontRegular | FontBold
@@ -96,9 +99,12 @@ data FontWeight = FontRegular | FontBold
 data FontFamily = FontProportional | FontMonospace
   deriving (Show, Eq)
 
+data FontSlant = FontUpright | FontItalic
+  deriving (Show, Eq)
+
 -- | The platform's regular font, of a size.
 fontOfSize :: Double -> FontConfig
-fontOfSize size = FontConfig size FontRegular FontProportional
+fontOfSize size = FontConfig size FontRegular FontProportional FontUpright
 
 -- | Configuration for a read-only text label.
 data TextConfig = TextConfig
@@ -211,6 +217,9 @@ colorToHex (Color r g b a) = Text.pack ('#' : toHexByte a ++ toHexByte r ++ toHe
 data WidgetStyle = WidgetStyle
   { wsPadding          :: Maybe Double
     -- ^ Uniform padding in platform-native units (px on Android, pt on iOS).
+  , wsPaddingY         :: Maybe Double
+    -- ^ Padding at the top and bottom, where it differs from 'wsPadding',
+    -- which then pads the sides.
   , wsTextAlign        :: Maybe TextAlignment
     -- ^ Horizontal text alignment override.
   , wsBackgroundColor  :: Maybe Color
@@ -252,10 +261,21 @@ data WidgetStyle = WidgetStyle
   , wsCornerRadius     :: Maybe Double
     -- ^ Rounds the widget's corners, clipping its background and
     -- content, in platform-native units. Half its size makes a circle.
+  , wsCorners          :: Maybe Corners
+    -- ^ Each corner's radius, in place of 'wsCornerRadius'. It shapes the
+    -- background, not what's on it.
   , wsKeepAtEnd        :: Maybe Bool
     -- ^ On a scrolling 'Column', as chats have it: its children sit at its
     -- end while they don't fill it, and it follows its end as they grow,
     -- unless scrolled away from it.
+  } deriving (Show, Eq)
+
+-- | The radius of each corner, in platform-native units.
+data Corners = Corners
+  { cornerTopLeft     :: Double
+  , cornerTopRight    :: Double
+  , cornerBottomRight :: Double
+  , cornerBottomLeft  :: Double
   } deriving (Show, Eq)
 
 -- | Where a widget sits across its container's axis: horizontally in a
@@ -272,6 +292,7 @@ data SelfAlignment
 defaultStyle :: WidgetStyle
 defaultStyle = WidgetStyle
   { wsPadding          = Nothing
+  , wsPaddingY         = Nothing
   , wsTextAlign        = Nothing
   , wsBackgroundColor  = Nothing
   , wsTranslateX       = Nothing
@@ -285,6 +306,7 @@ defaultStyle = WidgetStyle
   , wsMaxWidth         = Nothing
   , wsMaxLines         = Nothing
   , wsCornerRadius     = Nothing
+  , wsCorners          = Nothing
   , wsKeepAtEnd        = Nothing
   }
 
@@ -389,6 +411,7 @@ sampledAnimation curve duration fromStyle toStyle = AnimatedConfig
 lerpStyle :: Double -> WidgetStyle -> WidgetStyle -> WidgetStyle
 lerpStyle t from to = WidgetStyle
   { wsPadding          = lerpMaybeDouble (wsPadding from) (wsPadding to)
+  , wsPaddingY         = lerpMaybeDouble (wsPaddingY from) (wsPaddingY to)
   , wsTextAlign        = snapMaybe (wsTextAlign from) (wsTextAlign to)
   , wsBackgroundColor  = lerpMaybeColor (wsBackgroundColor from) (wsBackgroundColor to)
   , wsTranslateX       = lerpMaybeDouble (wsTranslateX from) (wsTranslateX to)
@@ -402,6 +425,7 @@ lerpStyle t from to = WidgetStyle
   , wsMaxWidth         = lerpMaybeDouble (wsMaxWidth from) (wsMaxWidth to)
   , wsMaxLines         = snapMaybe (wsMaxLines from) (wsMaxLines to)
   , wsCornerRadius     = lerpMaybeDouble (wsCornerRadius from) (wsCornerRadius to)
+  , wsCorners          = snapMaybe (wsCorners from) (wsCorners to)
   , wsKeepAtEnd        = snapMaybe (wsKeepAtEnd from) (wsKeepAtEnd to)
   }
   where

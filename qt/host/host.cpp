@@ -444,6 +444,7 @@ void Host::setNumProp(int id, int prop, double value)
         if (content) {
             const int style = int(value);
             write(content, "font.bold", bool(style & 1));
+            write(content, "font.italic", bool(style & 4));
             write(content, "font.family", (style & 2 ? QFontDatabase::systemFont(QFontDatabase::FixedFont)
                                                      : QGuiApplication::font())
                                               .family());
@@ -451,6 +452,16 @@ void Host::setNumProp(int id, int prop, double value)
         break;
     case UI_PROP_PADDING:
         node->padding = value;
+        node->paddingY = NAN;
+        break;
+    case UI_PROP_PADDING_Y:
+        node->paddingY = value;
+        break;
+    case UI_PROP_CORNER_TOP_LEFT:
+    case UI_PROP_CORNER_TOP_RIGHT:
+    case UI_PROP_CORNER_BOTTOM_RIGHT:
+    case UI_PROP_CORNER_BOTTOM_LEFT:
+        node->setCorner(prop - UI_PROP_CORNER_TOP_LEFT, value);
         break;
     case UI_PROP_INPUT_TYPE:
         if (node->type == UI_NODE_TEXT_INPUT) {

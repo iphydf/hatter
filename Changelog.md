@@ -4,6 +4,16 @@
 
 ### Added
 
+- `wsPaddingY`, padding at the top and bottom where it differs from
+  `wsPadding`'s, and `wsCorners`, each corner's radius of the
+  background, so message bubbles can join in a run. On Android, Qt,
+  the browser and the terminal (padding only, as cells have no
+  corners).
+
+- BREAKING: `fontSlant` in `FontConfig`, `FontItalic` for italic text,
+  on Android, Qt, the browser and the terminal (`fontOfSize` stays
+  upright). Code building a `FontConfig` by position adds the field.
+
 - `wsWidth`: a fixed-width style property (platform-native units,
   like `wsPadding`) applied through all platform bridges and
   animatable via keyframes, so sibling rows can align into table

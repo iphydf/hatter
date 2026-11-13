@@ -186,9 +186,11 @@ public final class HatterFiles {
                 copy.getParentFile().delete();
             }
         } catch (IOException | SecurityException e) {
+            android.util.Log.w("HatterPicture", "diag: couldn't copy or decode the picture", e);
             return null;
         }
         if (picture == null) {
+            android.util.Log.w("HatterPicture", "diag: the picture didn't decode");
             return null;
         }
         int square = Math.min(picture.getWidth(), picture.getHeight());
@@ -202,6 +204,7 @@ public final class HatterFiles {
                 return png.toByteArray();
             }
         }
+        android.util.Log.w("HatterPicture", "diag: no side gave a PNG of at most " + limit + " bytes");
         return null;
     }
 

@@ -183,6 +183,7 @@ bracketKeyframes sortedKeyframes progress =
 defaultStyleEmpty :: WidgetStyle
 defaultStyleEmpty = WidgetStyle
   { wsPadding          = Nothing
+  , wsPaddingY         = Nothing
   , wsTextAlign        = Nothing
   , wsBackgroundColor  = Nothing
   , wsTranslateX       = Nothing
@@ -196,6 +197,7 @@ defaultStyleEmpty = WidgetStyle
   , wsMaxWidth         = Nothing
   , wsMaxLines         = Nothing
   , wsCornerRadius     = Nothing
+  , wsCorners          = Nothing
   , wsKeepAtEnd        = Nothing
   }
 
@@ -220,6 +222,8 @@ interpolateStyle :: Int32 -> WidgetStyle -> WidgetStyle -> Double -> IO ()
 interpolateStyle nodeId fromStyle toStyle progress = do
   lerpNumProp Bridge.PropPadding
     (wsPadding fromStyle) (wsPadding toStyle)
+  lerpNumProp Bridge.PropPaddingY
+    (wsPaddingY fromStyle) (wsPaddingY toStyle)
   lerpColorProp Bridge.PropBgColor
     (wsBackgroundColor fromStyle) (wsBackgroundColor toStyle)
   lerpNumProp Bridge.PropTranslateX

@@ -42,14 +42,15 @@ coloursFor dark
   | otherwise = Colours (Color 0x1a 0x1c 0x20 0xff) (Color 0xf9 0xf9 0xff 0xff)
 
 data Cell = Cell
-  { cellChar  :: !Char
-  , cellAfter :: !Bool
+  { cellChar   :: !Char
+  , cellAfter  :: !Bool
     -- ^ The right half of a wide character.
-  , cellFg    :: !Color
-  , cellBg    :: !Color
-  , cellBold  :: !Bool
-  , cellDim   :: !Bool
-  , cellUnder :: !Bool
+  , cellFg     :: !Color
+  , cellBg     :: !Color
+  , cellBold   :: !Bool
+  , cellDim    :: !Bool
+  , cellUnder  :: !Bool
+  , cellItalic :: !Bool
   } deriving (Eq)
 
 -- | Pictures decoded and scaled to a size in pixels, as they are shown.
@@ -60,7 +61,7 @@ newPictures = Pictures <$> newIORef Map.empty
 
 paint :: Colours -> Pictures -> Int -> Int -> [Op] -> IO Vty.Image
 paint colours pictures width height ops = do
-  let blank = Cell ' ' False (coloursText colours) (coloursBackground colours) False False False
+  let blank = Cell ' ' False (coloursText colours) (coloursBackground colours) False False False False
   canvas <- MV.replicate (width * height) blank
   let at x y = y * width + x
       onCanvas x y = x >= 0 && y >= 0 && x < width && y < height
@@ -79,7 +80,8 @@ paint colours pictures width height ops = do
               modify x y $ \c -> c
                 { cellChar = ch, cellAfter = False
                 , cellFg = maybe (coloursText colours) (`blend` cellBg c) (lookColor look)
-                , cellBold = lookBold look, cellDim = lookDim look, cellUnder = lookUnderline look }
+                , cellBold = lookBold look, cellDim = lookDim look, cellUnder = lookUnderline look
+                , cellItalic = lookItalic look }
               when (w == 2) $ modify (x + 1) y $ \c -> c { cellChar = ' ', cellAfter = True }
             go (x + w) rest
       go x0 (Text.unpack t)
@@ -94,7 +96,7 @@ paint colours pictures width height ops = do
           modify x y $ \c ->
             let bg = blend bottom (cellBg c)
             in c { cellChar = '\x2580', cellAfter = False, cellFg = blend top bg, cellBg = bg
-                 , cellBold = False, cellDim = False, cellUnder = False }
+                 , cellBold = False, cellDim = False, cellUnder = False, cellItalic = False }
         Nothing -> do
           let name = case source of
                 ImageFile path -> Text.pack (takeFileName path)
@@ -109,7 +111,7 @@ paint colours pictures width height ops = do
     | y <- [0 .. height - 1] ]
   where
     sameLook a b = cellFg a == cellFg b && cellBg a == cellBg b && cellBold a == cellBold b
-      && cellDim a == cellDim b && cellUnder a == cellUnder b
+      && cellDim a == cellDim b && cellUnder a == cellUnder b && cellItalic a == cellItalic b
     run' cs@(c : _) = Vty.string (attr c) (map cellChar cs)
     run' [] = Vty.emptyImage
     attr c = foldr ($) Vty.defAttr
@@ -117,7 +119,8 @@ paint colours pictures width height ops = do
       , (`Vty.withBackColor` rgb (cellBg c))
       , if cellBold c then (`Vty.withStyle` Vty.bold) else id
       , if cellDim c then (`Vty.withStyle` Vty.dim) else id
-      , if cellUnder c then (`Vty.withStyle` Vty.underline) else id ]
+      , if cellUnder c then (`Vty.withStyle` Vty.underline) else id
+      , if cellItalic c then (`Vty.withStyle` Vty.italic) else id ]
     rgb (Color r g b _) = Vty.linearColor r g b
 
 -- | Clears the pixels outside rounded corners.

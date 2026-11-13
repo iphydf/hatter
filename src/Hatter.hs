@@ -61,6 +61,8 @@ module Hatter
   , FontConfig(..)
   , FontWeight(..)
   , FontFamily(..)
+  , FontSlant(..)
+  , Corners(..)
   , fontOfSize
   , TextInputConfig(..)
   , InputType(..)
@@ -237,6 +239,8 @@ import Hatter.Widget
   , Color(..)
   , FontConfig(..)
   , FontFamily(..)
+  , FontSlant(..)
+  , Corners(..)
   , FontWeight(..)
   , ImageConfig(..)
   , fontOfSize

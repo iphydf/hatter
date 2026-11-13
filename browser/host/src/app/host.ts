@@ -69,6 +69,11 @@ const enum NumProp {
   ItemCount = 22,
   ScrollToEnd = 23,
   FontStyle = 24,
+  PaddingY = 25,
+  CornerTopLeft = 26,
+  CornerTopRight = 27,
+  CornerBottomRight = 28,
+  CornerBottomLeft = 29,
 }
 
 const enum EventType {
@@ -323,9 +328,25 @@ export class Host {
       case NumProp.FontStyle:
         style.fontWeight = value & 1 ? '700' : '';
         style.fontFamily = value & 2 ? 'monospace' : '';
+        style.fontStyle = value & 4 ? 'italic' : '';
         break;
       case NumProp.Padding:
         style.padding = value ? px(value) : '';
+        break;
+      case NumProp.PaddingY:
+        style.paddingTop = style.paddingBottom = px(value);
+        break;
+      case NumProp.CornerTopLeft:
+        style.borderTopLeftRadius = Number.isNaN(value) ? '' : px(value);
+        break;
+      case NumProp.CornerTopRight:
+        style.borderTopRightRadius = Number.isNaN(value) ? '' : px(value);
+        break;
+      case NumProp.CornerBottomRight:
+        style.borderBottomRightRadius = Number.isNaN(value) ? '' : px(value);
+        break;
+      case NumProp.CornerBottomLeft:
+        style.borderBottomLeftRadius = Number.isNaN(value) ? '' : px(value);
         break;
       case NumProp.InputType:
         if (instance instanceof TextInputNode) instance.inputType.set(value);

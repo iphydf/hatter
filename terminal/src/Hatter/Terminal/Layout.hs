@@ -95,10 +95,11 @@ data Look = Look
   , lookBold      :: Bool
   , lookDim       :: Bool
   , lookUnderline :: Bool
+  , lookItalic    :: Bool
   } deriving (Eq, Show)
 
 plain :: Look
-plain = Look Nothing False False False
+plain = Look Nothing False False False False
 
 -- | Drawing, in order, each cut to what can be seen.
 data Op
@@ -315,6 +316,7 @@ unwrap = \case
 over :: WidgetStyle -> WidgetStyle -> WidgetStyle
 over outer inner = WidgetStyle
   { wsPadding = pick wsPadding
+  , wsPaddingY = pick wsPaddingY
   , wsTextAlign = pick wsTextAlign
   , wsBackgroundColor = pick wsBackgroundColor
   , wsTranslateX = pick wsTranslateX
@@ -328,6 +330,7 @@ over outer inner = WidgetStyle
   , wsMaxWidth = pick wsMaxWidth
   , wsMaxLines = pick wsMaxLines
   , wsCornerRadius = pick wsCornerRadius
+  , wsCorners = pick wsCorners
   , wsKeepAtEnd = pick wsKeepAtEnd
   }
   where
@@ -346,8 +349,9 @@ lay inputs path spec widget =
     padX = maybe 0 (columns scale) (wsPadding style)
     -- A background shows where a box ends, so it needs less padding.
     padY = case wsBackgroundColor style of
-      Just _  -> maybe 0 (spacing scale) (wsPadding style)
-      Nothing -> maybe 0 (rows scale) (wsPadding style)
+      Just _  -> maybe 0 (spacing scale) vertical
+      Nothing -> maybe 0 (rows scale) vertical
+    vertical = maybe (wsPadding style) Just (wsPaddingY style)
     capped = case (wsMaxWidth style, specW spec) of
       (Just most, Exactly s) -> Exactly (min s (columns scale most))
       (Just most, AtMost s)  -> AtMost (min s (columns scale most))
@@ -436,7 +440,8 @@ core inputs path node spec = case nodeWidget node of
 -- | Big text has no other way to stand out.
 fontLook :: Maybe FontConfig -> Look
 fontLook = \case
-  Just font -> plain { lookBold = fontWeight font == FontBold || fontSize font >= 20 }
+  Just font -> plain { lookBold = fontWeight font == FontBold || fontSize font >= 20
+                     , lookItalic = fontSlant font == FontItalic }
   Nothing   -> plain
 
 -- | Text wrapped to the width it has.

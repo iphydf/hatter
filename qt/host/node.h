@@ -41,6 +41,8 @@ public:
     // Hatter's SelfAlignment, -1 for none.
     int alignSelf = -1;
     double padding = 0, maxWidth = INFINITY, translateX = 0, translateY = 0;
+    // Padding at the top and bottom, where it differs from padding's.
+    double paddingY = NAN;
     // Hatter's TextAlignment: for a column or row, where its children go.
     int gravity = 0;
 
@@ -80,6 +82,10 @@ public:
 
     void setBackground(const QColor &colour);
     void setRadius(double radius);
+    // A corner's radius, 0 the top left and on clockwise, or with NaN, the
+    // radius again.
+    void setCorner(int corner, double radius);
+    double vertical() const;
     void setHandler(int event, int callback);
 
     // Measures the node for a spec, keeping what it needs to place it.

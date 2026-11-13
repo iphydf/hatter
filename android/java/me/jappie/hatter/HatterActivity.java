@@ -51,9 +51,14 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.content.res.TypedArray;
+import android.graphics.Color;
 import android.graphics.Outline;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -1726,11 +1731,73 @@ public class HatterActivity extends Activity implements View.OnClickListener {
         view.setClipToOutline(radius > 0);
     }
 
-    /** A text's font: 1 bold, 2 monospace. Called from native code. */
+    // Views with corners of their own: radii as GradientDrawable takes them,
+    // two a corner, clockwise from the top left.
+    private final WeakHashMap<View, float[]> corners = new WeakHashMap<>();
+
+    /**
+     * Round one corner of a view's background, 0 the top left and on
+     * clockwise, or with NaN, square it again. Called from native code.
+     */
+    public void setCorner(View view, int corner, float radius) {
+        float[] radii = corners.get(view);
+        if (radii == null) {
+            radii = new float[8];
+            corners.put(view, radii);
+        }
+        radii[2 * corner] = radii[2 * corner + 1] = Float.isNaN(radius) ? 0 : radius;
+        boolean square = true;
+        for (float r : radii) {
+            square &= r == 0;
+        }
+        if (square) {
+            corners.remove(view);
+        }
+        paint(view, colourOf(view));
+    }
+
+    /** A view's background colour, in the shape of its corners. Called from native code. */
+    public void setBackgroundColour(View view, int colour) {
+        paint(view, colour);
+    }
+
+    private void paint(View view, int colour) {
+        float[] radii = corners.get(view);
+        if (radii == null) {
+            view.setBackgroundColor(colour);
+            return;
+        }
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(colour);
+        shape.setCornerRadii(radii);
+        view.setBackground(shape);
+    }
+
+    private static int colourOf(View view) {
+        Drawable background = view.getBackground();
+        if (background instanceof ColorDrawable) {
+            return ((ColorDrawable) background).getColor();
+        }
+        if (background instanceof GradientDrawable) {
+            ColorStateList colours = ((GradientDrawable) background).getColor();
+            if (colours != null) {
+                return colours.getDefaultColor();
+            }
+        }
+        return Color.TRANSPARENT;
+    }
+
+    /** Padding at a view's top and bottom, keeping its sides'. Called from native code. */
+    public void setPaddingY(View view, int padding) {
+        view.setPadding(view.getPaddingLeft(), padding, view.getPaddingRight(), padding);
+    }
+
+    /** A text's font: 1 bold, 2 monospace, 4 italic. Called from native code. */
     public void setFontStyle(TextView view, int style) {
         view.setTypeface(android.graphics.Typeface.create(
             (style & 2) != 0 ? android.graphics.Typeface.MONOSPACE : android.graphics.Typeface.DEFAULT,
-            (style & 1) != 0 ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL));
+            ((style & 1) != 0 ? android.graphics.Typeface.BOLD : 0)
+                | ((style & 4) != 0 ? android.graphics.Typeface.ITALIC : 0)));
     }
 
     /**
@@ -1943,16 +2010,24 @@ public class HatterActivity extends Activity implements View.OnClickListener {
         }
         if (requestCode == PICTURE_REQUEST) {
             if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                android.util.Log.w("HatterPicture", "diag: no picture picked, result " + resultCode
+                    + ", data " + (data == null ? "null" : String.valueOf(data.getData())));
                 return;
             }
             final Uri uri = data.getData();
             final int[] sides = pictureSides;
             final int limit = pictureLimit;
             if (sides == null) {
+                android.util.Log.w("HatterPicture", "diag: picked " + uri + " but no sides: activity recreated?");
                 return;
             }
+            android.util.Log.i("HatterPicture", "diag: picked " + uri);
             new Thread(() -> {
+                long start = android.os.SystemClock.elapsedRealtime();
                 byte[] png = HatterFiles.squarePng(this, uri, sides, limit);
+                android.util.Log.i("HatterPicture", "diag: squarePng took "
+                    + (android.os.SystemClock.elapsedRealtime() - start) + " ms, "
+                    + (png == null ? "gave null" : png.length + " bytes"));
                 if (png != null) {
                     runOnUiThread(() -> onPicturePickedNative(png));
                 }
