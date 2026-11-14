@@ -183,12 +183,22 @@ bracketKeyframes sortedKeyframes progress =
 defaultStyleEmpty :: WidgetStyle
 defaultStyleEmpty = WidgetStyle
   { wsPadding          = Nothing
+  , wsPaddingY         = Nothing
   , wsTextAlign        = Nothing
   , wsBackgroundColor  = Nothing
   , wsTranslateX       = Nothing
   , wsTranslateY       = Nothing
   , wsWidth            = Nothing
   , wsTouchPassthrough = Nothing
+  , wsHeight           = Nothing
+  , wsWeight           = Nothing
+  , wsAlignSelf        = Nothing
+  , wsMargin           = Nothing
+  , wsMaxWidth         = Nothing
+  , wsMaxLines         = Nothing
+  , wsCornerRadius     = Nothing
+  , wsCorners          = Nothing
+  , wsKeepAtEnd        = Nothing
   }
 
 -- | Linearly interpolate between two 'Double' values.
@@ -212,6 +222,8 @@ interpolateStyle :: Int32 -> WidgetStyle -> WidgetStyle -> Double -> IO ()
 interpolateStyle nodeId fromStyle toStyle progress = do
   lerpNumProp Bridge.PropPadding
     (wsPadding fromStyle) (wsPadding toStyle)
+  lerpNumProp Bridge.PropPaddingY
+    (wsPaddingY fromStyle) (wsPaddingY toStyle)
   lerpColorProp Bridge.PropBgColor
     (wsBackgroundColor fromStyle) (wsBackgroundColor toStyle)
   lerpNumProp Bridge.PropTranslateX
@@ -220,6 +232,12 @@ interpolateStyle nodeId fromStyle toStyle progress = do
     (wsTranslateY fromStyle) (wsTranslateY toStyle)
   lerpNumProp Bridge.PropWidth
     (wsWidth fromStyle) (wsWidth toStyle)
+  lerpNumProp Bridge.PropHeight
+    (wsHeight fromStyle) (wsHeight toStyle)
+  lerpNumProp Bridge.PropMargin
+    (wsMargin fromStyle) (wsMargin toStyle)
+  lerpNumProp Bridge.PropCornerRadius
+    (wsCornerRadius fromStyle) (wsCornerRadius toStyle)
   -- TouchPassthrough is boolean — snaps to target, no interpolation.
   case wsTouchPassthrough toStyle of
     Just enabled ->

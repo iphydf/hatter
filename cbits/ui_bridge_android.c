@@ -80,6 +80,7 @@ static jclass   g_class_Button;
 static jclass   g_class_EditText;
 static jclass   g_class_LinearLayout;
 static jclass   g_class_ScrollView;
+static jclass   g_class_ListView;
 static jclass   g_class_HorizontalScrollView;
 static jclass   g_class_ImageView;
 static jclass   g_class_WebView;
@@ -87,7 +88,6 @@ static jclass   g_class_FrameLayout;
 static jclass   g_class_BitmapFactory;
 static jclass   g_class_View;
 static jclass   g_class_ViewGroup;
-static jclass   g_class_ViewGroup_LayoutParams;
 static jclass   g_class_Integer;
 
 static jmethodID g_ctor_TextView;
@@ -99,7 +99,6 @@ static jmethodID g_ctor_HorizontalScrollView;
 static jmethodID g_ctor_ImageView;
 static jmethodID g_ctor_WebView;
 static jmethodID g_ctor_FrameLayout;
-static jmethodID g_ctor_ViewGroup_LayoutParams;
 static jmethodID g_ctor_Integer;
 
 static jmethodID g_method_setText;
@@ -119,7 +118,6 @@ static jmethodID g_method_setTextSize;
 static jmethodID g_method_setPadding;
 static jmethodID g_method_setGravity_TextView;
 static jmethodID g_method_setGravity_LinearLayout;
-static jmethodID g_method_setLayoutParams;
 static jmethodID g_method_setTextColor;
 static jmethodID g_method_setBackgroundColor;
 static jmethodID g_method_setImageBitmap;
@@ -133,6 +131,36 @@ static jmethodID g_method_setJavaScriptEnabled;
 static jmethodID g_method_registerWebViewClient;
 static jmethodID g_method_getChildAt;
 static jmethodID g_method_requestFocusOnView;
+static jmethodID g_method_setLayoutField;
+static jmethodID g_method_applyLayout;
+static jmethodID g_method_setCornerRadius;
+static jmethodID g_method_setCorner;
+static jmethodID g_method_setBackgroundColour;
+static jmethodID g_method_setPaddingY;
+static jmethodID g_method_setTapFeedback;
+static jmethodID g_method_isNightMode;
+static jmethodID g_method_is24HourClock;
+static jmethodID g_method_setLongPress;
+static jmethodID g_method_openUri;
+static jmethodID g_method_pickFiles;
+static jmethodID g_method_capturePicture;
+static jmethodID g_method_decodeImageData;
+static jmethodID g_method_pickPicture;
+static jmethodID g_method_saveFile;
+static jmethodID g_method_imageSize;
+static jmethodID g_method_setScrollWatch;
+static jmethodID g_method_scrollToEnd;
+static jmethodID g_method_copyText;
+static jmethodID g_method_pickFile;
+static jmethodID g_method_openFile;
+static jmethodID g_method_decodeImageFile;
+static jmethodID g_method_setMaxWidth;
+static jmethodID g_method_setMaxLines;
+static jmethodID g_method_setFontStyle;
+static jmethodID g_method_keepAtEnd;
+static jmethodID g_ctor_ListView;
+static jmethodID g_method_initLazyList;
+static jmethodID g_method_setLazyCount;
 static jmethodID g_method_getText;
 static jclass    g_class_CharSequence;
 static jmethodID g_method_charSeqToString;
@@ -152,6 +180,18 @@ static void    android_remove_child(int32_t parentId, int32_t childId);
 static void    android_destroy_node(int32_t nodeId);
 static void    android_set_root(int32_t nodeId);
 static void    android_clear(void);
+static int32_t android_dark_mode(void);
+static int32_t android_clock24(void);
+static void    android_copy_text(const char *text);
+static void    android_pick_file(const char *mimeType);
+static void    android_open_file(const char *path);
+static void    android_open_uri(const char *uri);
+static void    android_pick_files(const char *mimeType);
+static void    android_capture_picture(void);
+static void    android_pick_picture(const int32_t *sides, int32_t count, int32_t limit);
+static void    android_save_file(const char *path, const char *name, const char *mimeType);
+static int32_t android_image_size(const char *path, int32_t *width, int32_t *height);
+static jbyteArray utf8_bytes(JNIEnv *env, const char *s);
 
 static UIBridgeCallbacks g_android_callbacks = {
     .createNode   = android_create_node,
@@ -164,6 +204,17 @@ static UIBridgeCallbacks g_android_callbacks = {
     .destroyNode  = android_destroy_node,
     .setRoot      = android_set_root,
     .clear        = android_clear,
+    .darkMode     = android_dark_mode,
+    .copyText     = android_copy_text,
+    .pickFile     = android_pick_file,
+    .openFile     = android_open_file,
+    .clock24      = android_clock24,
+    .openUri      = android_open_uri,
+    .pickFiles    = android_pick_files,
+    .capturePicture = android_capture_picture,
+    .pickPicture  = android_pick_picture,
+    .saveFile     = android_save_file,
+    .imageSize    = android_image_size,
 };
 
 /* ---- JNI class/method resolution ---- */
@@ -184,7 +235,8 @@ static int resolve_jni_ids(JNIEnv *env, jobject activity)
     if (!cls) return -1;
     g_class_EditText = (*env)->NewGlobalRef(env, cls);
 
-    cls = (*env)->FindClass(env, "android/widget/LinearLayout");
+    /* Columns and rows that measure stretched children like a flexbox. */
+    cls = (*env)->FindClass(env, "me/jappie/hatter/HatterLinearLayout");
     if (!cls) return -1;
     g_class_LinearLayout = (*env)->NewGlobalRef(env, cls);
 
@@ -195,6 +247,12 @@ static int resolve_jni_ids(JNIEnv *env, jobject activity)
     cls = (*env)->FindClass(env, "android/widget/HorizontalScrollView");
     if (!cls) return -1;
     g_class_HorizontalScrollView = (*env)->NewGlobalRef(env, cls);
+
+    cls = (*env)->FindClass(env, "android/widget/ListView");
+    if (!cls) return -1;
+    g_class_ListView = (*env)->NewGlobalRef(env, cls);
+    g_ctor_ListView = (*env)->GetMethodID(env, g_class_ListView,
+        "<init>", "(Landroid/content/Context;)V");
 
     cls = (*env)->FindClass(env, "android/widget/ImageView");
     if (!cls) return -1;
@@ -220,10 +278,6 @@ static int resolve_jni_ids(JNIEnv *env, jobject activity)
     if (!cls) return -1;
     g_class_ViewGroup = (*env)->NewGlobalRef(env, cls);
 
-    cls = (*env)->FindClass(env, "android/view/ViewGroup$LayoutParams");
-    if (!cls) return -1;
-    g_class_ViewGroup_LayoutParams = (*env)->NewGlobalRef(env, cls);
-
     cls = (*env)->FindClass(env, "java/lang/Integer");
     if (!cls) return -1;
     g_class_Integer = (*env)->NewGlobalRef(env, cls);
@@ -247,8 +301,6 @@ static int resolve_jni_ids(JNIEnv *env, jobject activity)
         "<init>", "(Landroid/content/Context;)V");
     g_ctor_FrameLayout = (*env)->GetMethodID(env, g_class_FrameLayout,
         "<init>", "(Landroid/content/Context;)V");
-    g_ctor_ViewGroup_LayoutParams = (*env)->GetMethodID(env,
-        g_class_ViewGroup_LayoutParams, "<init>", "(II)V");
     g_ctor_Integer = (*env)->GetMethodID(env, g_class_Integer,
         "<init>", "(I)V");
 
@@ -322,10 +374,6 @@ static int resolve_jni_ids(JNIEnv *env, jobject activity)
     g_method_setGravity_LinearLayout = (*env)->GetMethodID(env, g_class_LinearLayout,
         "setGravity", "(I)V");
 
-    /* View.setLayoutParams(ViewGroup.LayoutParams) — needed to set MATCH_PARENT width */
-    g_method_setLayoutParams = (*env)->GetMethodID(env, viewClass,
-        "setLayoutParams", "(Landroid/view/ViewGroup$LayoutParams;)V");
-
     /* TextView.setTextColor(int) — sets ARGB text color */
     g_method_setTextColor = (*env)->GetMethodID(env, g_class_TextView,
         "setTextColor", "(I)V");
@@ -388,6 +436,125 @@ static int resolve_jni_ids(JNIEnv *env, jobject activity)
         (*env)->ExceptionClear(env);
     }
 
+    /* Our custom Java methods for layout, corners, ripples and night mode */
+    g_method_setLayoutField = (*env)->GetMethodID(env, actClass,
+        "setLayoutField", "(Landroid/view/View;IF)V");
+    g_method_applyLayout = (*env)->GetMethodID(env, actClass,
+        "applyLayout", "(Landroid/view/View;)V");
+    g_method_setCornerRadius = (*env)->GetMethodID(env, actClass,
+        "setCornerRadius", "(Landroid/view/View;F)V");
+    g_method_setTapFeedback = (*env)->GetMethodID(env, actClass,
+        "setTapFeedback", "(Landroid/view/View;)V");
+    /* Optional, as an older Activity has no such methods. */
+    g_method_setCorner = (*env)->GetMethodID(env, actClass,
+        "setCorner", "(Landroid/view/View;IF)V");
+    if (!g_method_setCorner) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setBackgroundColour = (*env)->GetMethodID(env, actClass,
+        "setBackgroundColour", "(Landroid/view/View;I)V");
+    if (!g_method_setBackgroundColour) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setPaddingY = (*env)->GetMethodID(env, actClass,
+        "setPaddingY", "(Landroid/view/View;I)V");
+    if (!g_method_setPaddingY) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_isNightMode = (*env)->GetMethodID(env, actClass,
+        "isNightMode", "()Z");
+    /* Optional, as an older Activity has no such methods. */
+    g_method_is24HourClock = (*env)->GetMethodID(env, actClass,
+        "is24HourClock", "()Z");
+    if (!g_method_is24HourClock) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setLongPress = (*env)->GetMethodID(env, actClass,
+        "setLongPress", "(Landroid/view/View;I)V");
+    if (!g_method_setLongPress) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_openUri = (*env)->GetMethodID(env, actClass, "openUri", "([B)V");
+    if (!g_method_openUri) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_pickFiles = (*env)->GetMethodID(env, actClass, "pickFiles", "(Ljava/lang/String;)V");
+    if (!g_method_pickFiles) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_capturePicture = (*env)->GetMethodID(env, actClass, "capturePicture", "()V");
+    if (!g_method_capturePicture) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_decodeImageData = (*env)->GetMethodID(env, actClass,
+        "decodeImageData", "([B)Landroid/graphics/Bitmap;");
+    if (!g_method_decodeImageData) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_pickPicture = (*env)->GetMethodID(env, actClass, "pickPicture", "([II)V");
+    if (!g_method_pickPicture) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_saveFile = (*env)->GetMethodID(env, actClass, "saveFile", "([B[BLjava/lang/String;)V");
+    if (!g_method_saveFile) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_imageSize = (*env)->GetMethodID(env, actClass, "imageSize", "([B)[I");
+    if (!g_method_imageSize) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setScrollWatch = (*env)->GetMethodID(env, actClass, "setScrollWatch", "(Landroid/view/View;I)V");
+    if (!g_method_setScrollWatch) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_scrollToEnd = (*env)->GetMethodID(env, actClass, "scrollToEnd", "(Landroid/view/View;)V");
+    if (!g_method_scrollToEnd) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_copyText = (*env)->GetMethodID(env, actClass,
+        "copyText", "(Ljava/lang/String;)V");
+    g_method_pickFile = (*env)->GetMethodID(env, actClass,
+        "pickFile", "(Ljava/lang/String;)V");
+    g_method_openFile = (*env)->GetMethodID(env, actClass,
+        "openFile", "([B)V");
+    g_method_decodeImageFile = (*env)->GetMethodID(env, actClass,
+        "decodeImageFile", "([B)Landroid/graphics/Bitmap;");
+    if (!g_method_pickFile || !g_method_openFile || !g_method_decodeImageFile) {
+        LOGE("File helpers not found: update the Activity to the current hatter android sources");
+        (*env)->ExceptionClear(env);
+    }
+    if (!g_method_setLayoutField || !g_method_applyLayout ||
+        !g_method_setCornerRadius || !g_method_setTapFeedback ||
+        !g_method_isNightMode || !g_method_copyText) {
+        LOGE("Layout helpers not found: update the Activity to the current hatter android sources");
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setMaxWidth = (*env)->GetMethodID(env, g_class_TextView,
+        "setMaxWidth", "(I)V");
+    g_method_setMaxLines = (*env)->GetMethodID(env, actClass,
+        "setMaxLines", "(Landroid/widget/TextView;I)V");
+    if (!g_method_setMaxLines) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_setFontStyle = (*env)->GetMethodID(env, actClass,
+        "setFontStyle", "(Landroid/widget/TextView;I)V");
+    if (!g_method_setFontStyle) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_keepAtEnd = (*env)->GetMethodID(env, actClass,
+        "keepAtEnd", "(Landroid/view/View;)V");
+    if (!g_method_keepAtEnd) {
+        (*env)->ExceptionClear(env);
+    }
+    g_method_initLazyList = (*env)->GetMethodID(env, actClass,
+        "initLazyList", "(Landroid/widget/ListView;I)V");
+    g_method_setLazyCount = (*env)->GetMethodID(env, actClass,
+        "setLazyCount", "(Landroid/widget/ListView;I)V");
+    if (!g_method_initLazyList || !g_method_setLazyCount) {
+        LOGE("Lazy list helpers not found: update the Activity to the current hatter android sources");
+        (*env)->ExceptionClear(env);
+    }
+
     /* Clear any pending exception from optional method lookups above */
     if ((*env)->ExceptionCheck(env)) {
         LOGE("JNI exception during resolve_jni_ids — clearing");
@@ -426,6 +593,9 @@ static int ensure_pool_capacity(int32_t needed)
 }
 #endif
 
+/* The view of a node, for jni_bridge.c, which hands lazy rows to Java. */
+jobject ui_android_node_view(int32_t nodeId);
+
 static jobject get_node(int32_t nodeId)
 {
 #ifdef DYNAMIC_NODE_POOL
@@ -434,6 +604,11 @@ static jobject get_node(int32_t nodeId)
     if (nodeId < 1 || nodeId >= MAX_NODES) return NULL;
 #endif
     return g_nodes[nodeId];
+}
+
+jobject ui_android_node_view(int32_t nodeId)
+{
+    return get_node(nodeId);
 }
 
 /* ---- Hex color parser ---- */
@@ -557,6 +732,9 @@ static int32_t android_create_node(int32_t nodeType)
         view = (*env)->NewObject(env, g_class_FrameLayout, g_ctor_FrameLayout, g_activity);
         break;
     }
+    case UI_NODE_LAZY_COLUMN:
+        view = (*env)->NewObject(env, g_class_ListView, g_ctor_ListView, g_activity);
+        break;
     case UI_NODE_HORIZONTAL_SCROLL_VIEW: {
         view = (*env)->NewObject(env, g_class_HorizontalScrollView,
             g_ctor_HorizontalScrollView, g_activity);
@@ -590,6 +768,11 @@ static int32_t android_create_node(int32_t nodeType)
     g_nodes[nodeId] = (*env)->NewGlobalRef(env, view);
     (*env)->DeleteLocalRef(env, view);
 
+    /* Its adapter asks for rows by the list's node ID. */
+    if (nodeType == UI_NODE_LAZY_COLUMN && g_method_initLazyList) {
+        (*env)->CallVoidMethod(env, g_activity, g_method_initLazyList, g_nodes[nodeId], (jint)nodeId);
+    }
+
     LOGI("createNode(type=%d) -> %d", nodeType, nodeId);
     return nodeId;
 }
@@ -619,11 +802,12 @@ static void android_set_str_prop(int32_t nodeId, int32_t propId, const char *val
             (*env)->DeleteLocalRef(env, curStr);
             (*env)->DeleteLocalRef(env, curCharSeq);
             if (same) {
-                LOGI("setStrProp(node=%d, text=\"%s\") — skipped (same)", nodeId, value);
+                LOGI("setStrProp(node=%d, text) — skipped (same)", nodeId);
                 break;
             }
         }
-        LOGI("setStrProp(node=%d, text=\"%s\")", nodeId, value);
+        /* Not the text: Android keeps the log, and texts are messages. */
+        LOGI("setStrProp(node=%d, text)", nodeId);
         jstring jstr = (*env)->NewStringUTF(env, value);
         g_setting_text_programmatically = 1;
         (*env)->CallVoidMethod(env, view, g_method_setText, jstr);
@@ -649,7 +833,12 @@ static void android_set_str_prop(int32_t nodeId, int32_t propId, const char *val
     case UI_PROP_BG_COLOR: {
         LOGI("setStrProp(node=%d, bgColor=\"%s\")", nodeId, value);
         jint argb = parse_hex_color(value);
-        (*env)->CallVoidMethod(env, view, g_method_setBackgroundColor, argb);
+        /* In the shape of its corners, where it has its own. */
+        if (g_method_setBackgroundColour) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setBackgroundColour, view, argb);
+        } else {
+            (*env)->CallVoidMethod(env, view, g_method_setBackgroundColor, argb);
+        }
         break;
     }
     case UI_PROP_IMAGE_RESOURCE: {
@@ -666,14 +855,16 @@ static void android_set_str_prop(int32_t nodeId, int32_t propId, const char *val
             jclass resClass = (*env)->GetObjectClass(env, resources);
             jmethodID getIdentifier = (*env)->GetMethodID(env, resClass,
                 "getIdentifier", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I");
-            jmethodID getDrawable = (*env)->GetMethodID(env, resClass,
+            /* The activity's getDrawable applies its theme, which a
+             * drawable's theme attributes (like an icon's tint) need. */
+            jmethodID getDrawable = (*env)->GetMethodID(env, actClass,
                 "getDrawable", "(I)Landroid/graphics/drawable/Drawable;");
             jstring jname = (*env)->NewStringUTF(env, value);
             jstring jtype = (*env)->NewStringUTF(env, "drawable");
             jint resId = (*env)->CallIntMethod(env, resources, getIdentifier,
                 jname, jtype, packageName);
             if (resId != 0) {
-                jobject drawable = (*env)->CallObjectMethod(env, resources, getDrawable, resId);
+                jobject drawable = (*env)->CallObjectMethod(env, g_activity, getDrawable, resId);
                 jmethodID setImageDrawable = (*env)->GetMethodID(env, g_class_ImageView,
                     "setImageDrawable", "(Landroid/graphics/drawable/Drawable;)V");
                 (*env)->CallVoidMethod(env, view, setImageDrawable, drawable);
@@ -691,9 +882,13 @@ static void android_set_str_prop(int32_t nodeId, int32_t propId, const char *val
     case UI_PROP_IMAGE_FILE: {
         LOGI("setStrProp(node=%d, imageFile=\"%s\")", nodeId, value);
         if ((*env)->IsInstanceOf(env, view, g_class_ImageView)) {
-            jstring jpath = (*env)->NewStringUTF(env, value);
-            jobject bitmap = (*env)->CallStaticObjectMethod(env,
-                g_class_BitmapFactory, g_method_decodeFile, jpath);
+            /* At the size the screen needs, the right way up, or as it is
+               with an older Activity. */
+            jobject jpath = g_method_decodeImageFile
+                ? (jobject)utf8_bytes(env, value) : (jobject)(*env)->NewStringUTF(env, value);
+            jobject bitmap = g_method_decodeImageFile
+                ? (*env)->CallObjectMethod(env, g_activity, g_method_decodeImageFile, jpath)
+                : (*env)->CallStaticObjectMethod(env, g_class_BitmapFactory, g_method_decodeFile, jpath);
             if (bitmap) {
                 (*env)->CallVoidMethod(env, view, g_method_setImageBitmap, bitmap);
                 (*env)->DeleteLocalRef(env, bitmap);
@@ -701,6 +896,27 @@ static void android_set_str_prop(int32_t nodeId, int32_t propId, const char *val
                 LOGE("Failed to decode file: %s", value);
             }
             (*env)->DeleteLocalRef(env, jpath);
+        }
+        break;
+    }
+    case UI_PROP_IMAGE_STREAM: {
+        LOGI("setStrProp(node=%d, imageStream=\"%s\")", nodeId, value);
+        if ((*env)->IsInstanceOf(env, view, g_class_ImageView)) {
+            jclass videoClass = (*env)->FindClass(env, "me/jappie/hatter/HatterCallVideo");
+            jmethodID attach = videoClass
+                ? (*env)->GetStaticMethodID(env, videoClass, "attach", "([BLandroid/widget/ImageView;)V")
+                : NULL;
+            if (attach) {
+                jbyteArray jkey = utf8_bytes(env, value);
+                (*env)->CallStaticVoidMethod(env, videoClass, attach, jkey, view);
+                (*env)->DeleteLocalRef(env, jkey);
+            } else {
+                (*env)->ExceptionClear(env);
+                LOGE("HatterCallVideo not found");
+            }
+            if (videoClass) {
+                (*env)->DeleteLocalRef(env, videoClass);
+            }
         }
         break;
     }
@@ -741,27 +957,94 @@ static void android_set_num_prop(int32_t nodeId, int32_t propId, double value)
         LOGI("setNumProp(node=%d, padding=%d)", nodeId, px);
         break;
     }
-    case UI_PROP_WIDTH: {
-        /* Fixed width in raw pixels (same unit convention as
-         * UI_PROP_PADDING); height stays WRAP_CONTENT. The gravity
-         * case above uses the same LayoutParams pattern. */
-        jint px = (jint)value;
-        jobject layoutParams = (*env)->NewObject(env,
-            g_class_ViewGroup_LayoutParams, g_ctor_ViewGroup_LayoutParams,
-            px, (jint)-2); /* width, WRAP_CONTENT */
-        (*env)->CallVoidMethod(env, view, g_method_setLayoutParams, layoutParams);
-        (*env)->DeleteLocalRef(env, layoutParams);
-        LOGI("setNumProp(node=%d, width=%d)", nodeId, px);
+    case UI_PROP_PADDING_Y:
+        if (g_method_setPaddingY) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setPaddingY, view, (jint)value);
+        }
         break;
-    }
+    case UI_PROP_CORNER_TOP_LEFT:
+    case UI_PROP_CORNER_TOP_RIGHT:
+    case UI_PROP_CORNER_BOTTOM_RIGHT:
+    case UI_PROP_CORNER_BOTTOM_LEFT:
+        if (g_method_setCorner) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setCorner, view,
+                (jint)(propId - UI_PROP_CORNER_TOP_LEFT), (jfloat)value);
+        }
+        break;
+    case UI_PROP_WIDTH:
+    case UI_PROP_HEIGHT:
+    case UI_PROP_WEIGHT:
+    case UI_PROP_ALIGN_SELF:
+    case UI_PROP_MARGIN:
+        /* Sizes and margins in raw pixels, like UI_PROP_PADDING. The
+         * activity applies them in the kind of layout parameters the
+         * parent takes, keeping its defaults for the rest. */
+        if (g_method_setLayoutField) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setLayoutField, view,
+                (jint)(propId - UI_PROP_WIDTH), (jfloat)value);
+        }
+        LOGI("setNumProp(node=%d, layout prop=%d, value=%.1f)", nodeId, propId, value);
+        break;
+    case UI_PROP_MAX_WIDTH:
+        if ((*env)->IsInstanceOf(env, view, g_class_TextView) && g_method_setMaxWidth) {
+            (*env)->CallVoidMethod(env, view, g_method_setMaxWidth, (jint)value);
+        }
+        LOGI("setNumProp(node=%d, maxWidth=%.0f)", nodeId, value);
+        break;
+    case UI_PROP_SCROLL_TO_END:
+        if (g_method_scrollToEnd) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_scrollToEnd, view);
+        }
+        break;
+    case UI_PROP_ITEM_COUNT:
+        if ((*env)->IsInstanceOf(env, view, g_class_ListView) && g_method_setLazyCount) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setLazyCount, view, (jint)value);
+        }
+        LOGI("setNumProp(node=%d, itemCount=%.0f)", nodeId, value);
+        break;
+    case UI_PROP_FONT_STYLE:
+        if ((*env)->IsInstanceOf(env, view, g_class_TextView) && g_method_setFontStyle) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setFontStyle, view, (jint)value);
+        }
+        break;
+    case UI_PROP_MAX_LINES:
+        if ((*env)->IsInstanceOf(env, view, g_class_TextView) && g_method_setMaxLines) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setMaxLines, view, (jint)value);
+        }
+        LOGI("setNumProp(node=%d, maxLines=%.0f)", nodeId, value);
+        break;
+    case UI_PROP_KEEP_AT_END:
+        if ((int)value == 1 && g_method_keepAtEnd &&
+            ((*env)->IsInstanceOf(env, view, g_class_ScrollView) ||
+             (*env)->IsInstanceOf(env, view, g_class_ListView))) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_keepAtEnd, view);
+        }
+        LOGI("setNumProp(node=%d, keepAtEnd=%.0f)", nodeId, value);
+        break;
+    case UI_PROP_CORNER_RADIUS:
+        if (g_method_setCornerRadius) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setCornerRadius, view,
+                (jfloat)value);
+        }
+        LOGI("setNumProp(node=%d, cornerRadius=%.1f)", nodeId, value);
+        break;
     case UI_PROP_INPUT_TYPE: {
-        /* Haskell 0 = InputText  -> Android TYPE_CLASS_TEXT           (1)
-         * Haskell 1 = InputNumber -> Android TYPE_CLASS_NUMBER |
-         *                            TYPE_NUMBER_FLAG_DECIMAL         (8194)
+        /* Haskell 0 = InputText      -> Android TYPE_CLASS_TEXT       (1)
+         * Haskell 1 = InputNumber    -> Android TYPE_CLASS_NUMBER |
+         *                               TYPE_NUMBER_FLAG_DECIMAL      (8194)
+         * Haskell 2 = InputMultiline -> Android TYPE_CLASS_TEXT |
+         *                               TYPE_TEXT_FLAG_CAP_SENTENCES |
+         *                               TYPE_TEXT_FLAG_MULTI_LINE     (147457)
+         * Haskell 3 = InputPassword  -> Android TYPE_CLASS_TEXT |
+         *                               TYPE_TEXT_VARIATION_PASSWORD  (129)
          */
         jint androidType;
         if ((int)value == 1) {
             androidType = 8194; /* TYPE_CLASS_NUMBER | TYPE_NUMBER_FLAG_DECIMAL */
+        } else if ((int)value == 2) {
+            androidType = 147457;
+        } else if ((int)value == 3) {
+            androidType = 129;
         } else {
             androidType = 1;    /* TYPE_CLASS_TEXT */
         }
@@ -783,11 +1066,10 @@ static void android_set_num_prop(int32_t nodeId, int32_t propId, double value)
         if ((*env)->IsInstanceOf(env, view, g_class_TextView)) {
             (*env)->CallVoidMethod(env, view, g_method_setGravity_TextView, gravity);
             /* Set width to MATCH_PARENT so gravity has room to take effect */
-            jobject layoutParams = (*env)->NewObject(env,
-                g_class_ViewGroup_LayoutParams, g_ctor_ViewGroup_LayoutParams,
-                (jint)-1, (jint)-2); /* MATCH_PARENT, WRAP_CONTENT */
-            (*env)->CallVoidMethod(env, view, g_method_setLayoutParams, layoutParams);
-            (*env)->DeleteLocalRef(env, layoutParams);
+            if (g_method_setLayoutField) {
+                (*env)->CallVoidMethod(env, g_activity, g_method_setLayoutField, view,
+                    (jint)0 /* width */, (jfloat)-1 /* MATCH_PARENT */);
+            }
         } else if ((*env)->IsInstanceOf(env, view, g_class_LinearLayout)) {
             (*env)->CallVoidMethod(env, view, g_method_setGravity_LinearLayout, gravity);
         }
@@ -896,9 +1178,12 @@ static void android_set_image_data(int32_t nodeId, const uint8_t *data, int32_t 
     jbyteArray jdata = (*env)->NewByteArray(env, length);
     (*env)->SetByteArrayRegion(env, jdata, 0, length, (const jbyte *)data);
 
-    /* BitmapFactory.decodeByteArray(byte[], offset, length) */
-    jobject bitmap = (*env)->CallStaticObjectMethod(env,
-        g_class_BitmapFactory, g_method_decodeByteArray, jdata, (jint)0, (jint)length);
+    /* Bounded by the screen and a pixel count, as the bytes may come from
+       anyone, or as they are with an older Activity. */
+    jobject bitmap = g_method_decodeImageData
+        ? (*env)->CallObjectMethod(env, g_activity, g_method_decodeImageData, jdata)
+        : (*env)->CallStaticObjectMethod(env,
+              g_class_BitmapFactory, g_method_decodeByteArray, jdata, (jint)0, (jint)length);
     if (bitmap) {
         (*env)->CallVoidMethod(env, view, g_method_setImageBitmap, bitmap);
         (*env)->DeleteLocalRef(env, bitmap);
@@ -915,6 +1200,24 @@ static void android_set_handler(int32_t nodeId, int32_t eventType, int32_t callb
     JNIEnv *env = g_env;
     jobject view = get_node(nodeId);
     if (!view) return;
+
+    /* A long press keeps its callback in its listener, as the tag holds
+       the click's. */
+    if (eventType == UI_EVENT_SCROLLED) {
+        if (g_method_setScrollWatch) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setScrollWatch, view, (jint)callbackId);
+        }
+        return;
+    }
+    if (eventType == UI_EVENT_LONG_PRESS) {
+        if (g_method_setLongPress) {
+            (*env)->CallVoidMethod(env, g_activity, g_method_setLongPress, view, (jint)callbackId);
+            LOGI("setHandler(node=%d, longPress, callback=%d)", nodeId, callbackId);
+        } else {
+            LOGE("setHandler: setLongPress unavailable, skipping node=%d", nodeId);
+        }
+        return;
+    }
 
     /* Store callbackId as the view's tag (Integer) */
     jobject tagObj = (*env)->NewObject(env, g_class_Integer, g_ctor_Integer, callbackId);
@@ -934,6 +1237,9 @@ static void android_set_handler(int32_t nodeId, int32_t eventType, int32_t callb
         } else {
             /* Register the Activity (which implements OnClickListener) as handler */
             (*env)->CallVoidMethod(env, view, g_method_setOnClickListener, g_activity);
+            if (!(*env)->IsInstanceOf(env, view, g_class_Button) && g_method_setTapFeedback) {
+                (*env)->CallVoidMethod(env, g_activity, g_method_setTapFeedback, view);
+            }
         }
         LOGI("setHandler(node=%d, click, callback=%d)", nodeId, callbackId);
         break;
@@ -955,6 +1261,117 @@ static void android_set_handler(int32_t nodeId, int32_t eventType, int32_t callb
     }
 }
 
+/* Layout fields set before the child had a parent take effect now. */
+static void apply_layout(JNIEnv *env, jobject child)
+{
+    if (g_method_applyLayout) {
+        (*env)->CallVoidMethod(env, g_activity, g_method_applyLayout, child);
+    }
+}
+
+static int32_t android_dark_mode(void)
+{
+    if (!g_method_isNightMode) return 0;
+    return (*g_env)->CallBooleanMethod(g_env, g_activity, g_method_isNightMode) ? 1 : 0;
+}
+
+static int32_t android_clock24(void)
+{
+    if (!g_method_is24HourClock) return 0;
+    return (*g_env)->CallBooleanMethod(g_env, g_activity, g_method_is24HourClock) ? 1 : 0;
+}
+
+static void android_copy_text(const char *text)
+{
+    if (!g_method_copyText) return;
+    jstring jtext = (*g_env)->NewStringUTF(g_env, text);
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_copyText, jtext);
+    (*g_env)->DeleteLocalRef(g_env, jtext);
+}
+
+static void android_pick_file(const char *mimeType)
+{
+    if (!g_method_pickFile) return;
+    jstring jtype = (*g_env)->NewStringUTF(g_env, mimeType);
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_pickFile, jtype);
+    (*g_env)->DeleteLocalRef(g_env, jtype);
+}
+
+/* UTF-8 as bytes, since JNI's own strings take modified UTF-8. */
+static jbyteArray utf8_bytes(JNIEnv *env, const char *s)
+{
+    const jsize length = (jsize)strlen(s);
+    jbyteArray bytes = (*env)->NewByteArray(env, length);
+    (*env)->SetByteArrayRegion(env, bytes, 0, length, (const jbyte *)s);
+    return bytes;
+}
+
+static void android_open_file(const char *path)
+{
+    if (!g_method_openFile) return;
+    jbyteArray jpath = utf8_bytes(g_env, path);
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_openFile, jpath);
+    (*g_env)->DeleteLocalRef(g_env, jpath);
+}
+
+static void android_pick_files(const char *mimeType)
+{
+    if (!g_method_pickFiles) return;
+    jstring jtype = (*g_env)->NewStringUTF(g_env, mimeType);
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_pickFiles, jtype);
+    (*g_env)->DeleteLocalRef(g_env, jtype);
+}
+
+static int32_t android_image_size(const char *path, int32_t *width, int32_t *height)
+{
+    if (!g_method_imageSize) return 0;
+    jbyteArray jpath = utf8_bytes(g_env, path);
+    jintArray size = (*g_env)->CallObjectMethod(g_env, g_activity, g_method_imageSize, jpath);
+    (*g_env)->DeleteLocalRef(g_env, jpath);
+    if (size == NULL) return 0;
+    jint values[2];
+    (*g_env)->GetIntArrayRegion(g_env, size, 0, 2, values);
+    (*g_env)->DeleteLocalRef(g_env, size);
+    *width = values[0];
+    *height = values[1];
+    return 1;
+}
+
+static void android_save_file(const char *path, const char *name, const char *mimeType)
+{
+    if (!g_method_saveFile) return;
+    jbyteArray jpath = utf8_bytes(g_env, path);
+    jbyteArray jname = utf8_bytes(g_env, name);
+    jstring jtype = (*g_env)->NewStringUTF(g_env, mimeType);
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_saveFile, jpath, jname, jtype);
+    (*g_env)->DeleteLocalRef(g_env, jpath);
+    (*g_env)->DeleteLocalRef(g_env, jname);
+    (*g_env)->DeleteLocalRef(g_env, jtype);
+}
+
+static void android_pick_picture(const int32_t *sides, int32_t count, int32_t limit)
+{
+    if (!g_method_pickPicture) return;
+    jintArray jsides = (*g_env)->NewIntArray(g_env, count);
+    (*g_env)->SetIntArrayRegion(g_env, jsides, 0, count, (const jint *)sides);
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_pickPicture, jsides, (jint)limit);
+    (*g_env)->DeleteLocalRef(g_env, jsides);
+}
+
+static void android_capture_picture(void)
+{
+    if (!g_method_capturePicture) return;
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_capturePicture);
+}
+
+static void android_open_uri(const char *uri)
+{
+    if (!g_method_openUri) return;
+    jbyteArray juri = utf8_bytes(g_env, uri);
+    (*g_env)->CallVoidMethod(g_env, g_activity, g_method_openUri, juri);
+    (*g_env)->DeleteLocalRef(g_env, juri);
+}
+
 static void android_add_child(int32_t parentId, int32_t childId)
 {
     JNIEnv *env = g_env;
@@ -972,11 +1389,13 @@ static void android_add_child(int32_t parentId, int32_t childId)
         if (innerLayout) {
             (*env)->CallVoidMethod(env, innerLayout, g_method_addView, child);
             (*env)->DeleteLocalRef(env, innerLayout);
+            apply_layout(env, child);
             return;
         }
     }
 
     (*env)->CallVoidMethod(env, parent, g_method_addView, child);
+    apply_layout(env, child);
 }
 
 static void android_remove_child(int32_t parentId, int32_t childId)
@@ -1011,7 +1430,10 @@ static void android_destroy_node(int32_t nodeId)
      * Views staying visible when replaceNode destroys type-changed children. */
     jobject parent = (*env)->CallObjectMethod(env, view, g_method_getParent);
     if (parent) {
-        if ((*env)->IsInstanceOf(env, parent, g_class_ViewGroup))
+        /* A lazy column's rows are its adapter's, which ListView doesn't
+         * let anyone else remove. */
+        if ((*env)->IsInstanceOf(env, parent, g_class_ViewGroup) &&
+            !(*env)->IsInstanceOf(env, parent, g_class_ListView))
             (*env)->CallVoidMethod(env, parent, g_method_removeView, view);
         (*env)->DeleteLocalRef(env, parent);
     }
@@ -1064,7 +1486,12 @@ static void android_clear(void)
  */
 void setup_android_ui_bridge(JNIEnv *env, jobject activity, void *haskellCtx)
 {
+    static int resolved = 0;
+
     g_env = env;
+    if (g_activity) {
+        (*env)->DeleteGlobalRef(env, g_activity);
+    }
     g_activity = (*env)->NewGlobalRef(env, activity);
     (void)haskellCtx; /* context is now owned by jni_bridge.c */
 
@@ -1074,19 +1501,17 @@ void setup_android_ui_bridge(JNIEnv *env, jobject activity, void *haskellCtx)
         g_nodes = calloc((size_t)g_pool_capacity, sizeof(jobject));
         g_free_stack = calloc((size_t)g_pool_capacity, sizeof(int32_t));
         g_pending_free = calloc((size_t)g_pool_capacity, sizeof(int32_t));
-    } else {
-        memset(g_nodes, 0, (size_t)g_pool_capacity * sizeof(jobject));
     }
-#else
-    memset(g_nodes, 0, sizeof(g_nodes));
 #endif
-    g_next_node_id = 1;
-    g_free_count = 0;
-    g_pending_count = 0;
+    /* The views of an earlier activity go with it. */
+    android_clear();
 
-    if (resolve_jni_ids(env, activity) != 0) {
-        LOGE("Failed to resolve JNI IDs for UI bridge");
-        return;
+    if (!resolved) {
+        if (resolve_jni_ids(env, activity) != 0) {
+            LOGE("Failed to resolve JNI IDs for UI bridge");
+            return;
+        }
+        resolved = 1;
     }
 
     ui_register_callbacks(&g_android_callbacks);
@@ -1142,7 +1567,7 @@ void android_handle_text_change(JNIEnv *env, jobject view, jstring text, void *h
     const char *ctext = (*env)->GetStringUTFChars(env, text, NULL);
     if (!ctext) return;
 
-    LOGI("Text change dispatched: callbackId=%d, text=\"%s\"", callbackId, ctext);
+    LOGI("Text change dispatched: callbackId=%d", callbackId);
     haskellOnUITextChange(haskellCtx, callbackId, ctext);
 
     (*env)->ReleaseStringUTFChars(env, text, ctext);
