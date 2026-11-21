@@ -35,6 +35,7 @@ import Unwitch.Convert.Int32 qualified as Int32
 -- | Dangerous permissions that require runtime consent on mobile.
 data Permission
   = PermissionLocation
+    -- ^ Precise or approximate, as the user allows.
   | PermissionBluetooth
   | PermissionCamera
   | PermissionMicrophone

@@ -112,7 +112,12 @@ library
       Hatter.BottomSheet
       Hatter.Http
       Hatter.NetworkStatus
+      Hatter.Notification
+      Hatter.Picture
+      Hatter.CallAudio
+      Hatter.CallVideo
       Hatter.FilesDir
+      Hatter.DatabaseKey
       Hatter.DeviceInfo
   hs-source-dirs:
       src
@@ -142,10 +147,17 @@ library
       cbits/network_status_bridge.c
       cbits/animation_bridge.c
       cbits/redraw_bridge.c
+      cbits/notification_bridge.c
+      cbits/call_audio_bridge.c
+      cbits/call_video_bridge.c
+      cbits/picture_bridge.c
       cbits/files_dir.c
+      cbits/database_key.c
       cbits/device_info.c
   include-dirs:
       include
+  install-includes:
+      UIBridge.h
 
 executable scrollview-switch-demo
   import: common-options
@@ -170,6 +182,16 @@ executable styled-type-change-demo
 executable stack-demo
   import: common-options
   main-is: StackDemoMain.hs
+  ghc-options: -Wno-unused-packages -threaded
+  hs-source-dirs:
+      test
+  build-depends:
+      hatter,
+      text
+
+executable stretch-demo
+  import: common-options
+  main-is: StretchDemoMain.hs
   ghc-options: -Wno-unused-packages -threaded
   hs-source-dirs:
       test

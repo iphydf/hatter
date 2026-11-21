@@ -1,8 +1,8 @@
 /*
  * Android implementation of the redraw bridge.
  *
- * Uses JNI to call Activity.requestRedraw(), which runs
- * renderUI() on the main/UI thread via runOnUiThread().
+ * Uses JNI to call the static Activity.requestRedraw(), which runs
+ * renderUI() on the main/UI thread for the activity alive then.
  * Compiled by NDK clang, not cabal.
  *
  * request_redraw() may be called from any thread (e.g. a Haskell
@@ -21,7 +21,7 @@
 
 /* ---- Global state (set on the UI thread during setup) ---- */
 static JavaVM   *g_jvm          = NULL;   /* cached JVM for attaching threads */
-static jobject   g_activity     = NULL;   /* global ref to Activity */
+static jclass    g_activity_class = NULL; /* global ref, kept for good */
 static jmethodID g_method_requestRedraw;
 
 /* ---- Redraw bridge implementation ---- */
@@ -31,7 +31,7 @@ static void android_request_redraw(void *ctx)
     JNIEnv *env = NULL;
     int need_detach = 0;
 
-    if (!g_jvm || !g_activity) {
+    if (!g_jvm || !g_activity_class) {
         LOGE("request_redraw: bridge not initialized");
         return;
     }
@@ -52,7 +52,7 @@ static void android_request_redraw(void *ctx)
     }
 
     LOGI("request_redraw()");
-    (*env)->CallVoidMethod(env, g_activity, g_method_requestRedraw);
+    (*env)->CallStaticVoidMethod(env, g_activity_class, g_method_requestRedraw);
     if ((*env)->ExceptionCheck(env)) {
         LOGE("request_redraw: Java exception thrown");
         (*env)->ExceptionClear(env);
@@ -78,23 +78,29 @@ void setup_android_redraw_bridge(JNIEnv *env, jobject activity, void *haskellCtx
         (*env)->GetJavaVM(env, &g_jvm);
     }
 
-    if (!g_activity) {
-        g_activity = (*env)->NewGlobalRef(env, activity);
+    /* Only the class: a background thread may be calling through it while
+     * a recreated activity sets the bridge up again, so it is never
+     * replaced or deleted. */
+    if (g_activity_class) {
+        return;
     }
-
     jclass actClass = (*env)->GetObjectClass(env, activity);
 
-    g_method_requestRedraw = (*env)->GetMethodID(env, actClass,
+    g_method_requestRedraw = (*env)->GetStaticMethodID(env, actClass,
         "requestRedraw", "()V");
-
-    /* Clean up local reference */
-    (*env)->DeleteLocalRef(env, actClass);
 
     if (!g_method_requestRedraw) {
         LOGE("Failed to resolve requestRedraw JNI method ID — redraw bridge disabled");
         (*env)->ExceptionClear(env);
+        (*env)->DeleteLocalRef(env, actClass);
         return;
     }
+
+    /* Set after the method, as other threads take a class as ready. */
+    g_activity_class = (jclass)(*env)->NewGlobalRef(env, actClass);
+
+    /* Clean up local reference */
+    (*env)->DeleteLocalRef(env, actClass);
 
     /* Clear any unexpected pending exception before continuing */
     if ((*env)->ExceptionCheck(env)) {

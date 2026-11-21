@@ -5,6 +5,8 @@ module Hatter.Lifecycle
   , lifecycleFromInt
   , lifecycleToInt
   , MobileContext(..)
+  , CallButton(..)
+  , PickedFile(..)
   , defaultMobileContext
   , loggingMobileContext
   , platformLog
@@ -14,7 +16,10 @@ module Hatter.Lifecycle
 where
 
 import Control.Exception (SomeException)
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.Text (Text, pack, unpack)
+import Data.Word (Word64)
 import Foreign.C.String (CString, withCString)
 import Foreign.C.Types (CInt(..))
 import Foreign.StablePtr (StablePtr, newStablePtr, freeStablePtr)
@@ -58,7 +63,37 @@ lifecycleToInt LowMemory = 6
 data MobileContext = MobileContext
   { onLifecycle :: LifecycleEvent -> IO ()
   , onError     :: SomeException -> IO ()
+  , onBack      :: IO Bool
+    -- ^ The user pressed Back. 'True' if the app handled it, after
+    -- which it renders again. 'False' leaves it to the platform.
+  , onNotificationOpened :: Text -> IO ()
+    -- ^ The user tapped the notification with this key, which opened
+    -- the app. It renders again after.
+  , onCallButton :: Text -> CallButton -> IO ()
+    -- ^ The user pressed a button of the ringing notification with this
+    -- key. Answering opens the app, which renders again after.
+  , onFilePicked :: PickedFile -> IO ()
+    -- ^ The user picked a file, after 'Hatter.pickFile'. It renders again
+    -- after.
+  , onPicturePicked :: ByteString -> IO ()
+    -- ^ The user picked a picture, after 'Hatter.pickPicture', as a square
+    -- PNG. It renders again after.
+  , onRendered :: Word64 -> IO ()
+    -- ^ A render took this many nanoseconds, from asking for the view to
+    -- the platform having it.
   }
+
+-- | A button of a ringing notification, or of the call going on.
+data CallButton = Answer | Decline | End
+  deriving (Show, Eq)
+
+-- | A copy of a file the user picked, which the app may move or delete.
+data PickedFile = PickedFile
+  { pickedPath :: FilePath
+    -- ^ ASCII, whatever the file is called.
+  , pickedName :: Text
+  , pickedSize :: Integer
+  } deriving (Show, Eq)
 
 -- | A no-op context. Suitable as a default when no callbacks are needed.
 -- Logs errors via 'platformLog' by default so they are not silently swallowed.
@@ -66,6 +101,12 @@ defaultMobileContext :: MobileContext
 defaultMobileContext = MobileContext
   { onLifecycle = \_ -> pure ()
   , onError     = \exc -> platformLog ("Error: " <> pack (show exc))
+  , onBack      = pure False
+  , onNotificationOpened = \_ -> pure ()
+  , onCallButton = \_ _ -> pure ()
+  , onFilePicked = \_ -> pure ()
+  , onPicturePicked = \_ -> pure ()
+  , onRendered = \_ -> pure ()
   }
 
 foreign import ccall "hatterLog" c_hatterLog :: CString -> IO ()
@@ -80,6 +121,12 @@ loggingMobileContext :: MobileContext
 loggingMobileContext = MobileContext
   { onLifecycle = \event -> platformLog ("Lifecycle: " <> pack (show event))
   , onError     = \exc -> platformLog ("Error: " <> pack (show exc))
+  , onBack      = pure False
+  , onNotificationOpened = \key -> platformLog ("Notification opened: " <> key)
+  , onCallButton = \key button -> platformLog ("Call button " <> pack (show button) <> ": " <> key)
+  , onFilePicked = \picked -> platformLog ("File picked: " <> pickedName picked)
+  , onPicturePicked = \png -> platformLog ("Picture picked: " <> pack (show (BS.length png)) <> " bytes")
+  , onRendered = \_ -> pure ()
   }
 
 -- | Pin a 'MobileContext' on the GHC heap and return a 'StablePtr' to it.
